@@ -294,9 +294,9 @@ class CreateCommentViewset(viewsets.ModelViewSet):
 
 #######################에세이#######################
 #######################에세이#######################
-class ProducerViewSet(viewsets.ModelViewSet):
-    queryset = Producer.objects.all()
-    serializer_class = ProducerSerializer
+class AuthorViewSet(viewsets.ModelViewSet):
+    queryset = Author.objects.all()
+    serializer_class = AuthorSerializer
 
 class AgencyViewSet(viewsets.ModelViewSet):
     queryset = Agency.objects.all()
@@ -306,6 +306,6 @@ class PublicationViewSet(viewsets.ModelViewSet):
     queryset = Publication.objects.all()
     serializer_class = PublicationSerializer
 
-class EssayViewSet(viewsets.ModelViewSet):
-    queryset = Essay.objects.all()
-    serializer_class = EssaySerializer
+class PaperViewSet(viewsets.ModelViewSet):
+    queryset = Paper.objects.all()
+    serializer_class = PaperSerializer

@@ -102,7 +102,7 @@ const About = () => {
                 <div style={{ display: 'flex', width:'33%'}}>
                   <div style={{ width: '5%' }}></div>
                   <div className="roll-in-top" style={{ width: '90%', animationDelay: '11.4s'}}>
-                    <h3 className="tabtitle  animate__animated animate__headShake animate__infinite">Essay 탭은... </h3>
+                    <h3 className="tabtitle  animate__animated animate__headShake animate__infinite">Paper 탭은... </h3>
                     <Fade cascade>
                       <h4 className="tabsummary">학술논문, 학위논문을 읽고</h4>
                       <h4 className="tabsummary">필요한 내용을 발췌하여</h4>
@@ -171,7 +171,7 @@ const About = () => {
           <div style={{ display: 'flex', marginTop:'3rem', marginBottom:'1rem'}}>
             <div style={{ width: '5%' }}></div>
             <div style={{ width: '90%'}}>
-              <h2 className="tracking-in-expand-fwd-bottom" style={{ animationDelay: '18s'}}>차근차근 양질의 웹사이트로 거듭나도록 하겠습니다😊</h2>
+              <h2 className="tracking-in-expand-fwd-bottom" style={{ animationDelay: '15s'}}>차근차근 양질의 웹사이트로 거듭나도록 하겠습니다😊</h2>
               </div>
             <div style={{ width: '5%' }}></div>
           </div>

@@ -27,7 +27,7 @@ class RegisterSerializer(serializers.ModelSerializer):
     class Meta: 
         model = CustomUser
         fields = ['email', 'username', 'password', 'nickname', 'birthday']
-        extra_kwargs = {
+        extra_kwargs = { 
             'email': {'required': True},
             'username': {'required': False, 'allow_blank': True},
             'nickname': {'required': False, 'allow_blank': True},
@@ -233,9 +233,9 @@ class ExamSerializer(serializers.ModelSerializer):
 
 #######################에세이#######################
 #######################에세이#######################
-class ProducerSerializer(serializers.ModelSerializer):
+class AuthorSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Producer
+        model = Author
         fields = '__all__'
 
 class AgencySerializer(serializers.ModelSerializer):
@@ -244,24 +244,22 @@ class AgencySerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class PublicationSerializer(serializers.ModelSerializer):
-    author = serializers.PrimaryKeyRelatedField(many=True, queryset=Producer.objects.filter(job='author'))
-    translator = serializers.PrimaryKeyRelatedField(many=True, queryset=Producer.objects.filter(job='translator'), required=False)
 
     class Meta:
         model = Publication
         fields = '__all__'
 
-class EssaySerializer(serializers.ModelSerializer):
+class PaperSerializer(serializers.ModelSerializer):
+    publication = PublicationSerializer(read_only=True)
     nickname = UserSerializer(read_only=True)
     comment = CommentSerializer(many=True, read_only=True)
-    publication = PublicationSerializer(read_only=True)
     like_count = serializers.ReadOnlyField()
     is_liked = serializers.SerializerMethodField()
     bookmark_count = serializers.ReadOnlyField()
     is_bookmarked = serializers.SerializerMethodField()
     
     class Meta:
-        model = Essay
+        model = Paper
         fields = '__all__'
 
     def create(self, validated_data):
@@ -269,8 +267,8 @@ class EssaySerializer(serializers.ModelSerializer):
         if publication_data:
             publication_instance = Publication.objects.get(pk=publication_data)
             validated_data['publication'] = publication_instance
-        essay = Essay.objects.create(**validated_data)
-        return essay
+        paper = Paper.objects.create(**validated_data)
+        return paper
 
     def update(self, instance, validated_data):
         publication_data = self.initial_data.get('publication')
@@ -300,7 +298,7 @@ class EssaySerializer(serializers.ModelSerializer):
         return False
 
     def __init__(self, *args, **kwargs):
-        super(EssaySerializer, self).__init__(*args, **kwargs)
+        super(PaperSerializer, self).__init__(*args, **kwargs)
         request = self.context.get('request')
         if request and request.method == 'POST':
             self.Meta.depth = 0

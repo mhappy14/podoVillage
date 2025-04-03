@@ -41,19 +41,19 @@ export default function Navbar(props) {
           {renderTab('Home', '/home')}
         </Box>
 
-        {/* About, Study - 60% */}
-        <Box sx={{ width: '60%', textAlign: 'left' }}>
+        {/* About, Study - 70% */}
+        <Box sx={{ width: '70%', textAlign: 'left' }}>
           {renderTab('About', '/about')}
           {renderTab('Study', '/study', null, '/study')} {/* /study 경로 시작 여부 확인 */}
-          {renderTab('Essay', '/essay', null, '/essay')} 
-          {renderTab('Review', '/review', null, '/review')} 
+          {renderTab('Paper', '/Paper', null, '/Paper')} 
+          {renderTab('Literature', '/Literature', null, '/Literature')} 
           {renderTab('Place', '/place', null, '/place')} 
           {renderTab('Knowhow', '/knowhow', null, '/knowhow')} 
           {renderTab('Invest', '/invest', null, '/invest')} 
         </Box>
 
         {/* Mypage, Logout - 20% */}
-        <Box sx={{ width: '30%', textAlign: 'right', padding: '0 1.5rem 0 0' }}>
+        <Box sx={{ width: '20%', textAlign: 'right', padding: '0 1.5rem 0 0' }}>
           {isLoggedIn
             ? (
               <>

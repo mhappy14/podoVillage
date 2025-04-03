@@ -17,10 +17,10 @@ router.register('detailsubject', CreateDetailsubjectViewset, basename='detailsub
 router.register('explanation', CreateExplanationViewset, basename='explanation')
 router.register('comment', CreateCommentViewset, basename='comment')
 
-router.register('producer', ProducerViewSet, basename='producer')
+router.register('author', AuthorViewSet, basename='author')
 router.register('agency', AgencyViewSet, basename='agency')
 router.register('publication', PublicationViewSet, basename='publication')
-router.register('essay', EssayViewSet, basename='essay')
+router.register('paper', PaperViewSet, basename='paper')
 
 urlpatterns = router.urls
 urlpatterns = router.urls + [

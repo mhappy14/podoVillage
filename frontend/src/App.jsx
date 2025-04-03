@@ -10,11 +10,11 @@ import Study from './components/Study';
 import StudyView from './components/StudyView';
 import StudyEdit from './components/StudyEdit';
 import StudyWrite from './components/StudyWrite';
-import Essay from './components/Essay';
-import EssayWrite from './components/EssayWrite';
-import EssayView from './components/EssayView';
-import EssayEdit from './components/EssayEdit';
-import Review from './components/Review';
+import Paper from './components/Paper';
+import PaperWrite from './components/PaperWrite';
+import PaperView from './components/PaperView';
+import PaperEdit from './components/PaperEdit';
+import Literature from './components/Literature';
 import Place from './components/Place';
 import Knowhow from './components/Knowhow';
 import Invest from './components/Invest';
@@ -60,12 +60,12 @@ function App() {
                   <Route path="/study/write" element={<StudyWrite />} />
                   <Route path="/study/view/:id" element={<StudyView />} />
                   <Route path="/study/edit/:id" element={<StudyEdit />} />
-                  <Route path="/essay" element={<Essay />} />
-                  <Route path="/essay/write" element={<EssayWrite />} />
-                  <Route path="/essay/view" element={<EssayView />} />
-                  <Route path="/essay/view/:id" element={<EssayView />} />
-                  <Route path="/essay/edit/:id" element={<EssayEdit />} />
-                  <Route path="/review" element={<Review />} />
+                  <Route path="/Paper" element={<Paper />} />
+                  <Route path="/Paper/write" element={<PaperWrite />} />
+                  <Route path="/Paper/view" element={<PaperView />} />
+                  <Route path="/Paper/view/:id" element={<PaperView />} />
+                  <Route path="/Paper/edit/:id" element={<PaperEdit />} />
+                  <Route path="/Literature" element={<Literature />} />
                   <Route path="/place" element={<Place />} />
                   <Route path="/knowhow" element={<Knowhow />} />
                   <Route path="/invest" element={<Invest />} />

@@ -35,7 +35,7 @@ const Register = () =>{
       phone_number: data.phone_number
 		})
 		.then(() => {
-			navigate(`/`)
+			navigate(`/login`)
 		})
 	}
 

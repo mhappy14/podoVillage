@@ -168,39 +168,32 @@ class Explanation(models.Model):
 	def __str__(self):
 		return  f"{self.question.slug}의 해설"
 
+#######################에세이#######################저자-기관-출판정보-본문
 #######################에세이#######################
-#######################에세이#######################
-class Producer(models.Model):
-    JOB_CHOICES = [
-        ('author', 'Author'),
-        ('translator', 'Translator'),
-    ]
-    job = models.CharField(max_length=10, choices=JOB_CHOICES)
-    producer_name = models.CharField(max_length=30, null=False, blank=False)
+class Author(models.Model):
+    author = models.CharField(max_length=40, null=False, blank=False)
 
     def __str__(self):
-        return f"{self.producer_name} ({self.job})"
+        return f"{self.author}"
 
 class Agency(models.Model):
-    agency_name = models.CharField(max_length=50, null=False, blank=False)
+    agency = models.CharField(max_length=50, null=False, blank=False)
 
     def __str__(self):
-        return self.agency_name
+        return self.agency
 
 class Publication(models.Model):
     CATEGORY_CHOICES = [
         ('article', '학술논문'),
-        ('book', '단행본'),
-        ('translation', '번역서'),
+        ('research', '연구보고서'),
         ('dissertation', '박사학위논문'),
         ('thesis', '석사학위논문'),
     ]
     category = models.CharField(max_length=15, choices=CATEGORY_CHOICES)
     year = models.PositiveIntegerField(null=False)
-    author = models.ManyToManyField('Producer', limit_choices_to={'job': 'author'}, related_name='authored_publications')
-    translator = models.ManyToManyField('Producer', limit_choices_to={'job': 'translator'}, related_name='translated_publications', blank=True)
+    author = models.ManyToManyField('Author', blank=True)
     title = models.TextField(max_length=1000)
-    agency_name = models.ForeignKey('Agency', on_delete=models.SET_NULL, null=True, blank=True)
+    agency = models.ForeignKey('Agency', on_delete=models.SET_NULL, null=True, blank=True)
     volume = models.PositiveIntegerField(null=True, blank=True)
     issue = models.PositiveIntegerField(null=True, blank=True)
     start_page = models.PositiveIntegerField(null=True, blank=True)
@@ -210,12 +203,12 @@ class Publication(models.Model):
     def __str__(self):
         return self.title
 
-class Essay(models.Model):
+class Paper(models.Model):
 	publication = models.ForeignKey(Publication, on_delete=models.SET_NULL, null=True)
 	nickname = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
-	essay = models.CharField(max_length=5000, null=True, blank=True, default="")
-	like = models.ManyToManyField(User, blank=True, related_name="like_essay")
-	bookmark = models.ManyToManyField(User, blank=True, related_name="bookmark_essay")
+	contents = models.CharField(max_length=5000, null=True, blank=True, default="")
+	like = models.ManyToManyField(User, blank=True, related_name="like_Paper")
+	bookmark = models.ManyToManyField(User, blank=True, related_name="bookmark_Paper")
 	created_at = models.DateTimeField(auto_now_add=True) 
 	updated_at = models.DateTimeField(auto_now=True) 
 
@@ -229,16 +222,16 @@ class Essay(models.Model):
 	
 	def save(self, *args, **kwargs):
 		# HTML 클린징 적용
-		self.essay = bleach.clean(
-				self.essay,
+		self.contents  = bleach.clean(
+				self.contents,
 				tags=['p', 'b', 'i', 'u', 'a', 'ul', 'ol', 'li', 'br'],  # 허용할 태그
 				attributes={'a': ['href', 'title']},  # 허용할 속성
 				strip=True,  # 허용하지 않는 태그 제거
 		)
-		super(Essay, self).save(*args, **kwargs)
+		super(Paper, self).save(*args, **kwargs)
 
 	def __str__(self):
-			return f"Essay on {self.publication.title}"
+			return f"Paper on {self.publication.title}"
 
 #######################댓글#######################
 #######################댓글#######################
@@ -247,7 +240,7 @@ class Comment(models.Model):
 	content = models.TextField()  # 댓글 내용
 	nickname = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
 	explanation = models.ForeignKey(Explanation, on_delete=models.SET_NULL, null=True, blank=True, related_name='comments_ex')
-	essay = models.ForeignKey(Essay, on_delete=models.SET_NULL, null=True, blank=True, related_name='comments_es')
+	paper = models.ForeignKey(Paper, on_delete=models.SET_NULL, null=True, blank=True, related_name='comments_pa')
 	like = models.ManyToManyField(User, blank=True, related_name="like_comment") 
 	created_at = models.DateTimeField(auto_now_add=True) 
 	updated_at = models.DateTimeField(auto_now=True) 

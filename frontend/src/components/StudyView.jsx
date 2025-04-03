@@ -40,7 +40,7 @@ const StudyView = () => {
         // 서버에서 explanation ID를 기준으로 필터링된 댓글 가져오기
         const commentRes = await AxiosInstance.get('comment/'); // 전체 댓글 가져오기
         const filteredComments = commentRes.data.filter(
-          (comment) => comment.explanation?.id === parseInt(id) // essay.id와 URL의 id 비교
+          (comment) => comment.explanation?.id === parseInt(id) // Paper.id와 URL의 id 비교
         );
         setComments(filteredComments);
 

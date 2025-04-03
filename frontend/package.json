@@ -22,6 +22,7 @@
     "@mui/x-date-pickers": "^7.17.0",
     "@tinymce/tinymce-react": "^5.1.1",
     "animate.css": "^4.1.1",
+    "antd": "^5.24.5",
     "axios": "^1.8.4",
     "chart.js": "^4.4.8",
     "dayjs": "^1.11.13",
