@@ -60,12 +60,12 @@ function App() {
                   <Route path="/study/write" element={<StudyWrite />} />
                   <Route path="/study/view/:id" element={<StudyView />} />
                   <Route path="/study/edit/:id" element={<StudyEdit />} />
-                  <Route path="/Paper" element={<Paper />} />
-                  <Route path="/Paper/write" element={<PaperWrite />} />
-                  <Route path="/Paper/view" element={<PaperView />} />
-                  <Route path="/Paper/view/:id" element={<PaperView />} />
-                  <Route path="/Paper/edit/:id" element={<PaperEdit />} />
-                  <Route path="/Literature" element={<Literature />} />
+                  <Route path="/paper" element={<Paper />} />
+                  <Route path="/paper/write" element={<PaperWrite />} />
+                  <Route path="/paper/view" element={<PaperView />} />
+                  <Route path="/paper/view/:id" element={<PaperView />} />
+                  <Route path="/paper/edit/:id" element={<PaperEdit />} />
+                  <Route path="/literature" element={<Literature />} />
                   <Route path="/place" element={<Place />} />
                   <Route path="/knowhow" element={<Knowhow />} />
                   <Route path="/invest" element={<Invest />} />

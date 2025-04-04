@@ -45,8 +45,8 @@ export default function Navbar(props) {
         <Box sx={{ width: '70%', textAlign: 'left' }}>
           {renderTab('About', '/about')}
           {renderTab('Study', '/study', null, '/study')} {/* /study 경로 시작 여부 확인 */}
-          {renderTab('Paper', '/Paper', null, '/Paper')} 
-          {renderTab('Literature', '/Literature', null, '/Literature')} 
+          {renderTab('Paper', '/paper', null, '/paper')} 
+          {renderTab('Literature', '/literature', null, '/literature')} 
           {renderTab('Place', '/place', null, '/place')} 
           {renderTab('Knowhow', '/knowhow', null, '/knowhow')} 
           {renderTab('Invest', '/invest', null, '/invest')} 
@@ -65,7 +65,7 @@ export default function Navbar(props) {
         </Box>
         </div>
 
-      <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
+      <Box component="main" sx={{ flexGrow: 1, p: 0.5 }}>
         {content}
       </Box>
     </Box>

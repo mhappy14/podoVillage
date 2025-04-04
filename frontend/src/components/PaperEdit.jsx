@@ -1,52 +1,44 @@
-import React, { useState, useEffect } from "react";
-import { Box, Typography } from "@mui/material";
-import AxiosInstance from "./AxiosInstance";
-import PaperWriteText from "./PaperWriteText";
+import React, { useState, useEffect } from 'react';
+import { Space, Typography, Divider, Row, Col } from 'antd';
+import AxiosInstance from './AxiosInstance';
+import PaperWriteText from './PaperWriteText';
 import PaperWriteAuthor from './PaperWriteAuthor';
 import PaperWriteAgency from './PaperWriteAgency';
 import PaperWritePublication from './PaperWritePublication';
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from 'react-router-dom';
+
+const { Title } = Typography;
 
 const PaperEdit = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [selectedPaper, setSelectedPaper] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
+  // refreshKey가 변경되면 데이터를 다시 불러옵니다.
   const refreshData = () => {
-    setRefreshKey((prevKey) => prevKey + 1); // 키 증가
+    setRefreshKey((prevKey) => prevKey + 1);
   };
 
-  // 기존 데이터 저장
-  const [selectedPaper, setSelectedPaper] = useState(null);
-  const [selectedCategory, setSelectedCategory] = useState("");
-  const [selectedAuthor, setSelectedAuthor] = useState("");
-  const [selectedAgency, setSelectedAgency] = useState("");
-  const [selectedPublication, setSelectedPublication] = useState("");
-
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchPaper = async () => {
       try {
-        const PaperResponse = await AxiosInstance.get(`Paper/${id}/`);
-        const PaperData = PaperResponse.data;
-        setSelectedPaper(PaperData);
-
-        // ✅ 기존 선택값 유지
-        setSelectedCategory(PaperData.publication?.category || "");
-        setSelectedAuthor(PaperData.publication?.author[0]?.id || "");
-        setSelectedAgency(PaperData.publication?.agency_name || "");
-        setSelectedPublication(PaperData.publication?.id || "");
+        const response = await AxiosInstance.get(`paper/${id}/`);
+        const data = response.data;
+        setSelectedPaper(data);
       } catch (error) {
         console.error("데이터 가져오기 오류:", error);
       }
     };
 
-    fetchData();
-  }, [id]);
+    fetchPaper();
+  }, [id, refreshKey]);
 
   const handleSave = async (updatedData) => {
     try {
-      await AxiosInstance.patch(`Paper/${id}/`, updatedData);
+      await AxiosInstance.patch(`paper/${id}/`, updatedData);
       alert("게시글이 성공적으로 수정되었습니다.");
-      navigate(`/Paper/view/${id}`);
+      navigate(`/paper/view/${id}`);
     } catch (error) {
       console.error("게시글 수정 오류:", error);
       alert("게시글 수정 중 오류가 발생했습니다.");
@@ -54,49 +46,52 @@ const PaperEdit = () => {
   };
 
   return (
-    <div style={{ padding: "20px" }}>
-      <Typography variant="h5" gutterBottom>
-        Edit Paper
-      </Typography>
+    <Space direction="vertical" size="large" style={{ padding: '20px', width: '100%' }}>
+      <Title level={4}>Edit Paper</Title>
       {selectedPaper && (
-        <Box sx={{ border: "1px solid #ccc", borderRadius: "8px", margin: "0 0 3rem 0" }}>
+        <>
+          {/* PaperWriteText: 글 제목, 본문, 카테고리 등 주요 정보를 수정 */}
           <PaperWriteText
             selectedPaper={{
               id: selectedPaper.id,
-              Paper: selectedPaper.Paper,
-              category: selectedCategory,
-              Author: selectedAuthor,
-              agency: selectedAgency,
-              publication: selectedPublication,
+              title: selectedPaper.title,
+              // 'contents' 필드가 리뷰 본문에 해당한다면 PaperWriteText 컴포넌트에서 이를 사용합니다.
+              Paper: selectedPaper.contents, 
+              category: selectedPaper.publication?.category || "",
+              // 여기서는 Publication의 author 배열 중 첫번째를 사용합니다.
+              author: selectedPaper.publication?.author?.[0]?.id || "",
+              // Agency는 nested 객체로 포함되어 있다면 agency.agency를 사용합니다.
+              agency: selectedPaper.publication?.agency ? selectedPaper.publication.agency.agency : "",
+              publication: selectedPaper.publication?.id || ""
             }}
             onSave={handleSave}
             isEdit={true}
           />
-          <Box
-            sx={{
+
+          {/* 하단 영역: 저자, 기관, 서적 정보 수정 */}
+          <Row 
+            style={{
               border: '1px solid #ccc',
-              borderRadius: '8px',
-              margin: '1rem 0',
-              padding: '1rem',
-              display: 'flex',
-              flexDirection: 'row', // 가로 배치
-              gap: '1rem', // 부모 컨테이너의 너비를 채움
-              alignItems: 'stretch', // 하단 라인 정렬
+              borderRadius: 8,
+              width: '100%'
             }}
           >
-            {/* 왼쪽 박스 (Producer, Agency) */}
-            <Box sx={{ display: 'flex', width: '35%', flexDirection: 'column', gap: '2rem' }}>
-              <PaperWriteAuthor onRefresh={refreshData} />
-              <PaperWriteAgency onRefresh={refreshData} />
-            </Box>
-            {/* 오른쪽 박스 (Publication) */}
-            <Box sx={{ width: '65%' }}>
-              <PaperWritePublication onRefresh={refreshData} />
-            </Box>
-          </Box>
-        </Box>
+            {/* 왼쪽 영역: Author, Agency */}
+            <Col flex={2} style={{padding: '20px'}}>
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <PaperWriteAuthor onRefresh={refreshData} refreshKey={refreshKey} />
+                <PaperWriteAgency onRefresh={refreshData} refreshKey={refreshKey} />
+              </Space>
+            </Col>
+            
+            {/* 오른쪽 영역: Publication */}
+            <Col flex={3} style={{padding: '20px'}}>
+              <PaperWritePublication onRefresh={refreshData} refreshKey={refreshKey} />
+            </Col>
+          </Row>
+        </>
       )}
-    </div>
+    </Space>
   );
 };
 

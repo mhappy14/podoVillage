@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Box, TextField, FormControl, InputLabel, MenuItem } from '@mui/material';
 import { AutoComplete, Input, Select, Button, Flex, Typography } from 'antd';
 import AxiosInstance from './AxiosInstance';
 
 const { Text } = Typography;
 
-const PaperWritePublication = ({ onRefresh }) => {
+const PaperWritePublication = ({ onRefresh, refreshKey }) => {
   const [publicationList, setPublicationList] = useState([]);
   const [authorList, setAuthorList] = useState([]);
   const [agencyList, setAgencyList] = useState([]);
@@ -36,6 +35,11 @@ const PaperWritePublication = ({ onRefresh }) => {
     }
   };
 
+  // refreshKey가 변경될 때마다 데이터를 재조회합니다.
+  useEffect(() => {
+    fetchData();
+  }, [refreshKey]);
+
   const handleAddPublication = async () => {
     try {
       const requestData = {
@@ -43,7 +47,7 @@ const PaperWritePublication = ({ onRefresh }) => {
         year: parseInt(newPublication.year, 10),
         title: newPublication.title,
         agency: newPublication.agency, // ForeignKey에 맞는 필드명 사용
-        author: newPublication.author, // 단일 선택일 경우, 배열 대신 단일 값 사용
+        author_ids: newPublication.author, 
         volume: newPublication.volume || null,
         issue: newPublication.issue || null,
         start_page: newPublication.start_page || null,
@@ -67,10 +71,6 @@ const PaperWritePublication = ({ onRefresh }) => {
       console.error('Publication 추가 오류:', error);
     }
   };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   return (
     <Flex vertical>

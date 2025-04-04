@@ -34,7 +34,7 @@ class CustomUserManager(BaseUserManager):
 
 class CustomUser(AbstractUser):
     email = models.EmailField(max_length=200, unique=True)
-    nickname = models.CharField(max_length=100, unique=True)
+    nickname = models.CharField(max_length=100, null=True, blank=True, unique=True)
     birthday = models.DateField(null=True, blank=True)
     username = models.CharField(max_length=200, null=True, blank=True)
     address = models.CharField(max_length=300, null=True, blank=True)
@@ -191,14 +191,15 @@ class Publication(models.Model):
     ]
     category = models.CharField(max_length=15, choices=CATEGORY_CHOICES)
     year = models.PositiveIntegerField(null=False)
-    author = models.ManyToManyField('Author', blank=True)
-    title = models.TextField(max_length=1000)
+    title = models.TextField(max_length=1000, null=True, blank=True)
     agency = models.ForeignKey('Agency', on_delete=models.SET_NULL, null=True, blank=True)
     volume = models.PositiveIntegerField(null=True, blank=True)
     issue = models.PositiveIntegerField(null=True, blank=True)
     start_page = models.PositiveIntegerField(null=True, blank=True)
     end_page = models.PositiveIntegerField(null=True, blank=True)
     link = models.TextField(max_length=2000, null=True, blank=True)
+    combined_author = models.CharField(max_length=255, blank=True)
+    extra_author = models.CharField(max_length=255, blank=True)
 
     def __str__(self):
         return self.title
@@ -206,6 +207,7 @@ class Publication(models.Model):
 class Paper(models.Model):
 	publication = models.ForeignKey(Publication, on_delete=models.SET_NULL, null=True)
 	nickname = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+	title = models.CharField(max_length=500, null=False, blank=False)
 	contents = models.CharField(max_length=5000, null=True, blank=True, default="")
 	like = models.ManyToManyField(User, blank=True, related_name="like_Paper")
 	bookmark = models.ManyToManyField(User, blank=True, related_name="bookmark_Paper")
@@ -231,7 +233,7 @@ class Paper(models.Model):
 		super(Paper, self).save(*args, **kwargs)
 
 	def __str__(self):
-			return f"Paper on {self.publication.title}"
+			return f"Paper on {self.publication}"
 
 #######################댓글#######################
 #######################댓글#######################

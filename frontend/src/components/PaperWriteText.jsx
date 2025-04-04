@@ -9,6 +9,7 @@ const { Text } = Typography;
 
 const PaperWriteText = ({ selectedPaper = null, onSave, isEdit = false }) => {
   const navigate = useNavigate();
+  const [title, setTitle] = useState(selectedPaper?.title || '');
   const [Paper, setPaper] = useState(selectedPaper?.Paper || '');
   const [selectedCategory, setSelectedCategory] = useState(selectedPaper?.category || '');
   const [selectedAuthor, setSelectedAuthor] = useState(selectedPaper?.author || '');
@@ -70,12 +71,13 @@ const PaperWriteText = ({ selectedPaper = null, onSave, isEdit = false }) => {
     e.preventDefault();
     setErrorMessage('');
 
-    if (!selectedCategory || !selectedAuthor || !selectedAgency || !selectedPublication || !Paper) {
+    if (!title || !selectedCategory || !selectedAuthor || !selectedAgency || !selectedPublication || !Paper) {
       setErrorMessage('모든 필드를 입력해주세요.');
       return;
     }
 
     const requestData = {
+      title,
       category: selectedCategory,
       author: selectedAuthor,
       agency: selectedAgency,
@@ -159,6 +161,16 @@ const PaperWriteText = ({ selectedPaper = null, onSave, isEdit = false }) => {
               }))}
             />
           </div>
+        </Flex>
+
+        {/* 제목 작성 */}
+        <Flex vertical style={{ marginTop: '0.5rem'}}>
+          <Text level={5}>제목</Text>
+          <Input
+            placeholder="제목을 입력하세요."
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
         </Flex>
 
         {/* 본문 작성 */}

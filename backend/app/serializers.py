@@ -244,11 +244,52 @@ class AgencySerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class PublicationSerializer(serializers.ModelSerializer):
+    author = AuthorSerializer(many=True, read_only=True)
+    agency = AgencySerializer(read_only=True)
+    # 쓰기 전용 필드로 저자 ID 목록을 받음
+    author_ids = serializers.PrimaryKeyRelatedField(
+        queryset=Author.objects.all(), many=True, write_only=True
+    )
 
     class Meta:
         model = Publication
         fields = '__all__'
+        extra_fields = ['author_ids']
 
+    def create(self, validated_data):
+        # write_only 필드에서 저자 ID 목록을 꺼냅니다.
+        author_objs = validated_data.pop('author_ids', None)
+        publication = Publication.objects.create(**validated_data)
+        
+        if author_objs:
+            # author_objs는 이미 Author 인스턴스 목록입니다.
+            author_names = [a.author for a in author_objs]
+            
+            if len(author_names) < 4:
+                # 1~3명의 경우: 단일 Author 인스턴스로 결합
+                if len(author_names) == 1:
+                    combined_name = author_names[0]
+                    extra_author = author_names[0]
+                elif len(author_names) == 2:
+                    combined_name = f"{author_names[0]} & {author_names[1]}"
+                    extra_author = f"{author_names[0]} & {author_names[1]}"
+                else:  # 3명
+                    combined_name = f"{author_names[0]}, {author_names[1]} & {author_names[2]}"
+                    extra_author = f"{author_names[0]}, {author_names[1]} & {author_names[2]}"
+            else:
+                # 4명 이상인 경우:
+                # combined_name: "aaa, bbb, ccc, ddd & eee" 형식
+                combined_name = f"{', '.join(author_names[:-1])} & {author_names[-1]}"
+                # extra_author: "aaa 외" 형식 (첫 번째 저자만 사용)
+                extra_author = f"{author_names[0]} 외"
+            
+            # Publication 모델의 필드에 저장합니다.
+            publication.combined_author = combined_name
+            publication.extra_author = extra_author
+            publication.save()
+                
+        return publication
+    
 class PaperSerializer(serializers.ModelSerializer):
     publication = PublicationSerializer(read_only=True)
     nickname = UserSerializer(read_only=True)

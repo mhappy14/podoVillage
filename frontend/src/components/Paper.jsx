@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Box, Button, FormControl, InputLabel, Stack, Pagination, Typography } from '@mui/material';
-import { Link } from 'react-router-dom';
+import { AutoComplete, Input, Select, Button, Flex, Space, Pagination, Typography } from 'antd';
+import { Link, useNavigate  } from 'react-router-dom';
 import AxiosInstance from './AxiosInstance';
-import { Select } from 'antd';
+
+const { Text } = Typography;
 
 const Paper = () => {
   const [Papers, setPapers] = useState([]);
@@ -12,10 +13,12 @@ const Paper = () => {
   const [selectedAuthor, setSelectedAuthor] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
+  const navigate = useNavigate();
+
   useEffect(() => {
     const fetchPapers = async () => {
       try {
-        const response = await AxiosInstance.get('Paper/', {
+        const response = await AxiosInstance.get('paper/', {
           headers: { Authorization: null }, // 인증 없이 데이터 요청
         });
         setPapers(response.data);
@@ -31,19 +34,18 @@ const Paper = () => {
   const itemsPerPage = 10;
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const totalPages = Math.ceil(Papers.length / itemsPerPage);
 
   const filteredPapers = useMemo(() => {
     let filtered = Papers;
     if (selectedCategory) {
-      filtered = filtered.filter((Paper) => Paper.publication?.category === selectedCategory);
+      filtered = filtered.filter((paper) => paper.publication?.category === selectedCategory);
     }
     if (selectedYear) {
-      filtered = filtered.filter((Paper) => Paper.publication?.year === parseInt(selectedYear, 10));
+      filtered = filtered.filter((paper) => paper.publication?.year === parseInt(selectedYear, 10));
     }
     if (selectedAuthor) {
-      filtered = filtered.filter((Paper) =>
-        Paper.publication?.author?.some((author) => author.producer_name === selectedAuthor)
+      filtered = filtered.filter((paper) =>
+        paper.publication?.author?.some((author) => author.author  === selectedAuthor)
       );
     }
     return filtered;
@@ -55,33 +57,33 @@ const Paper = () => {
 
   const paginatedPapers = sortedPapers.slice(indexOfFirstItem, indexOfLastItem);
 
-  const handlePageChange = (event, value) => {
-    setCurrentPage(value);
+  const handlePageChange = (page, pageSize) => {
+    setCurrentPage(page);
   };
 
   // antd Select에 전달할 옵션 배열 생성
   const categoryOptions = [
-    { value: '', label: '전체' },
-    ...Array.from(new Set(Papers.map((Paper) => Paper.publication?.category || ''))).map((category) => ({
+    { value: '', label: '카테고리' },
+    ...Array.from(new Set(Papers.map((paper) => paper.publication?.category || ''))).map((category) => ({
       value: category,
       label: category,
     })),
   ];
 
   const yearOptions = [
-    { value: '', label: '전체' },
-    ...Array.from(new Set(Papers.map((Paper) => Paper.publication?.year || ''))).map((year) => ({
+    { value: '', label: '발행연도' },
+    ...Array.from(new Set(Papers.map((paper) => paper.publication?.year || ''))).map((year) => ({
       value: year,
       label: year,
     })),
   ];
 
   const authorOptions = [
-    { value: '', label: '전체' },
+    { value: '', label: '저자' },
     ...Array.from(
       new Set(
-        Papers.flatMap((Paper) =>
-          Paper.publication?.author?.map((author) => author.producer_name) || []
+        Papers.flatMap((paper) =>
+          paper.publication?.author?.map((author) => author.author) || []
         )
       )
     ).map((author) => ({
@@ -92,84 +94,98 @@ const Paper = () => {
 
   return (
     <div>
-      <Box sx={{ display: 'flex', gap: '1rem', m: 1 }}>
-        {/* 카테고리 선택 */}
-        <FormControl sx={{ flex: 1 }}>
-          <InputLabel shrink>카테고리</InputLabel>
-          <Select
-            value={selectedCategory}
-            onChange={(value) => {
-              setSelectedCategory(value);
-              setCurrentPage(1);
-            }}
-            style={{ width: '100%' }}
-            options={categoryOptions}
-          />
-        </FormControl>
+      <Flex gap="small" style={{ margin: '1rem 0 0 0', width: '100%' }}>
+        <Select
+          placeholder="카테고리를 선택해주세요."
+          value={selectedCategory}
+          onChange={(value) => {
+            setSelectedCategory(value);
+            setCurrentPage(1);
+          }}
+          options={categoryOptions}
+          style={{ width: '100%' }}
+        />
+        <Select
+          placeholder="발행연도를 선택해주세요."
+          value={selectedYear}
+          onChange={(value) => {
+            setSelectedYear(value);
+            setCurrentPage(1);
+          }}
+          options={yearOptions}
+          style={{ width: '100%' }}
+        />
+        <Select
+          placeholder="저자를 선택해주세요."
+          value={selectedAuthor}
+          onChange={(value) => {
+            setSelectedAuthor(value);
+            setCurrentPage(1);
+          }}
+          options={authorOptions}
+          style={{ width: '100%' }}
+        />
+      </Flex >
 
-        {/* 출판연도 선택 */}
-        <FormControl sx={{ flex: 1 }}>
-          <InputLabel shrink>출판연도</InputLabel>
-          <Select
-            value={selectedYear}
-            onChange={(value) => {
-              setSelectedYear(value);
-              setCurrentPage(1);
-            }}
-            style={{ width: '100%' }}
-            options={yearOptions}
-          />
-        </FormControl>
-
-        {/* 저자 선택 */}
-        <FormControl sx={{ flex: 1 }}>
-          <InputLabel shrink>저자</InputLabel>
-          <Select
-            value={selectedAuthor}
-            onChange={(value) => {
-              setSelectedAuthor(value);
-              setCurrentPage(1);
-            }}
-            style={{ width: '100%' }}
-            options={authorOptions}
-          />
-        </FormControl>
-      </Box>
-
-      <div>
+      <Flex>
         {loading ? (
-          <Typography>Loading...</Typography>
-        ) : (
-          <div style={{ margin: '3rem 0 0 0' }}>
-            {paginatedPapers.map((Paper) => (
-              <Box
-                key={Paper.id}
-                sx={{ p: 2, m: 1, boxShadow: 3, cursor: 'pointer', backgroundColor: 'white', color: 'black' }}
-              >
-                <Link to={`/Paper/view/${Paper.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                  <div>
-                    <strong>{Paper.publication?.title}</strong>
-                  </div>
-                </Link>
-              </Box>
-            ))}
-          </div>
-        )}
-      </div>
+          <Text>Loading...</Text>
+            ) : (
+          <Flex vertical style={{ margin: '1rem 0 0 0',
+            width: '100%', }}>
+            {paginatedPapers.map((paper) => {
+              let dynamicText = '';
+              const category = paper.publication?.category;
 
-      <div style={{ display: 'flex', marginLeft: '2rem', marginRight: '2rem', marginTop: '2rem' }}>
+              if (category === 'research') {
+                dynamicText = (<>{paper.publication.extra_author}, {paper.publication.title}({paper.publication.agency.agency}, {paper.publication.year})</>);
+              } else if (category === 'article') {
+                dynamicText = (<>{paper.publication.extra_author}, "{paper.publication.title}," {paper.publication.agency.agency} {paper.publication.volume}, no.{paper.publication.issue} ({paper.publication.year}):{paper.publication.start_page}-{paper.publication.end_page}</>);
+              } else if (category === 'dissertation') {
+                dynamicText = (<>{paper.publication.extra_author}, "{paper.publication.title}," (박사학위, {paper.publication.agency.agency}, {paper.publication.year})</>);
+              } else if (category === 'thesis') {
+                dynamicText = (<>{paper.publication.extra_author}, "{paper.publication.title}," (석사학위, {paper.publication.agency.agency}, {paper.publication.year})</>);
+              }
+
+              return (
+                <Space
+                  key={paper.id}
+                  direction="vertical"
+                  size={0}
+                  style={{
+                    padding: '0.5rem 1rem 0.5rem 1rem',   // 상 우 하 좌
+                    margin: '0.5rem 0.5rem 0.5rem 0.5rem',   // 상 우 하 좌
+                    boxShadow: '0px 3px 6px rgba(0, 0, 0, 0.2)', // MUI boxShadow:3와 유사한 효과 (필요에 따라 조정)
+                    cursor: 'pointer',
+                    backgroundColor: 'white',
+                  }}
+                  onClick={() => navigate(`/paper/view/${paper.id}`)}
+                >
+                  <Text style={{ fontSize: '0.7rem' }} >{paper.title}</Text>
+                  <Text style={{ fontSize: '0.7rem', color: 'gray' }} >{dynamicText}</Text>
+                </Space>
+              );
+            })}
+          </Flex>
+        )}
+      </Flex>
+
+      <Flex style={{ display: 'flex', marginLeft: '2rem', marginRight: '2rem', marginTop: '2rem' }}>
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}></div>
         <div style={{ flex: 2, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-          <Stack spacing={2}>
-            <Pagination count={totalPages} page={currentPage} onChange={handlePageChange} />
-          </Stack>
+          <Pagination 
+            current={currentPage}
+            total={Papers.length}
+            pageSize={itemsPerPage}
+            onChange={handlePageChange}
+          />
         </div>
         <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-          <Button component={Link} to="/Paper/write" variant="contained">
+          <Button  type="primary" onClick={() => navigate('/paper/write')}>
             Write
           </Button>
         </div>
-      </div>
+      </Flex>
     </div>
   );
 };
