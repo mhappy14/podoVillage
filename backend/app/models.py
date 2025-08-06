@@ -236,7 +236,6 @@ class Paper(models.Model):
 			return f"Paper on {self.publication}"
 
 #######################댓글#######################
-#######################댓글#######################
 
 class Comment(models.Model):
 	content = models.TextField()  # 댓글 내용
@@ -252,3 +251,30 @@ class Comment(models.Model):
 
 	def __str__(self):
 		return f"Comment by {self.nickname} on {self.created_at}"
+
+#######################위키#######################
+
+class WikiPage(models.Model):
+    title = models.CharField(max_length=200, unique=True)
+    slug = models.SlugField(max_length=200, unique=True, blank=True)
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    nickname = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='wiki_pages')
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.title)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.title
+
+class WikiVersion(models.Model):
+    page = models.ForeignKey('WikiPage', on_delete=models.CASCADE, related_name='versions')
+    content = models.TextField()
+    edited_at = models.DateTimeField(auto_now_add=True)
+    nickname = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='wiki_versions')
+
+    def __str__(self):
+        return f"{self.page.title} - {self.edited_at.strftime('%Y-%m-%d %H:%M:%S')}"

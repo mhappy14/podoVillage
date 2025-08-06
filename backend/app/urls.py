@@ -2,6 +2,7 @@ from django.contrib import admin
 from rest_framework.routers import DefaultRouter
 from .views import * 
 from django.urls import path
+from app.views_invest import stock_history
 
 
 router = DefaultRouter()
@@ -21,10 +22,13 @@ router.register('author', AuthorViewSet, basename='author')
 router.register('agency', AgencyViewSet, basename='agency')
 router.register('publication', PublicationViewSet, basename='publication')
 router.register('paper', PaperViewSet, basename='paper')
+router.register('wiki', WikiPageViewSet, basename='wiki')
+
 
 urlpatterns = router.urls
 urlpatterns = router.urls + [
-    path('api/fred/', fred_proxy, name='fred_proxy')
+    path('api/fred/', fred_proxy, name='fred_proxy'),
+    path('api/stock/<str:symbol>/', stock_history, name='stock-history')
 ]
 
 # 1 시험명Exam(시험명examname)

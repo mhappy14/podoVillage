@@ -48,8 +48,8 @@ export default function Navbar(props) {
           {renderTab('Paper', '/paper', null, '/paper')} 
           {renderTab('Literature', '/literature', null, '/literature')} 
           {renderTab('Place', '/place', null, '/place')} 
-          {renderTab('Knowhow', '/knowhow', null, '/knowhow')} 
           {renderTab('Invest', '/invest', null, '/invest')} 
+          {renderTab('Wiki', '/wiki', null, '/wiki')} 
         </Box>
 
         {/* Mypage, Logout - 20% */}

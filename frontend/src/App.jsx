@@ -16,7 +16,10 @@ import PaperView from './components/PaperView';
 import PaperEdit from './components/PaperEdit';
 import Literature from './components/Literature';
 import Place from './components/Place';
-import Knowhow from './components/Knowhow';
+import Wiki from './components/Wiki';
+import WikiView from './components/WikiView';
+import WikiEdit from './components/WikiEdit';
+import WikiCreate from './components/WikiCreate';
 import Invest from './components/Invest';
 import Mypage from './components/Mypage';
 import ProtectedRoute from './components/ProtectedRoutes';
@@ -67,7 +70,10 @@ function App() {
                   <Route path="/paper/edit/:id" element={<PaperEdit />} />
                   <Route path="/literature" element={<Literature />} />
                   <Route path="/place" element={<Place />} />
-                  <Route path="/knowhow" element={<Knowhow />} />
+                  <Route path="/wiki" element={<Wiki />} />
+                  <Route path="/wiki/view/:slug" element={<WikiView />} />
+                  <Route path="/wiki/edit/:slug" element={<WikiEdit />} />
+                  <Route path="/wiki/create" element={<WikiCreate />} />
                   <Route path="/invest" element={<Invest />} />
                   <Route path="/mypage" element={<Mypage />} />
                 </Routes>

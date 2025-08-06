@@ -9,6 +9,14 @@ const Home = () => {
   const [userInfo, setUserInfo] = useState(null);
   const [userStats, setUserStats] = useState({ posts: 0, totalLikes: 0, totalBookmarks: 0 });
 
+  const logoutUser = () => {
+    AxiosInstance.post(`logoutall/`, {}).then(() => {
+      localStorage.removeItem('Token');
+      navigate('/');
+    });
+  };
+
+  const isLoggedIn = localStorage.getItem('Token') !== null; // 로그인 여부 확인
 
   useEffect(() => {
     const fetchExplanations = async () => {
@@ -67,42 +75,52 @@ const Home = () => {
       <Typography variant="h5" sx={{ mb: '2rem' }}>
         안녕하세요
       </Typography>
-
-      <Box sx={{ display: 'flex', gap: '1.4rem'}}>
-        <Box sx={{ width:'75%' }}>
-          <Box variant="h6" sx={{ mb: '1rem' }}>최근에 작성된 답안</Box>
-            {loading ? ( <Typography>Loading data...</Typography>
-            ) : (
-            explanations.map((item) => (
-              <Box key={item.id} sx={{ mt: 2, p: '0.8rem', mb: 2, boxShadow: 3, backgroundColor: 'white', color: 'black', cursor: 'pointer' }}>
-                <Link to={`/study/view/${item.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <Typography sx={{ width:'80%' }} variant="subtitle1">
-                      <strong>{item.question.questiontext}</strong><br />
-                      {item.exam.examname} {item.examnumber.year}년 {item.examnumber.examnumber}
-                      회 {item.question.questionnumber1}과목 {item.question.questionnumber2}문항
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: 'gray', width:'20%', textAlign: 'right' }}>
-                      좋아요: {item.like.length}개
-                    </Typography>
+      {isLoggedIn
+        ? (
+          <>
+          <Box sx={{ display: 'flex', gap: '1.4rem'}}>
+            <Box sx={{ width:'75%' }}>
+              <Box variant="h6" sx={{ mb: '1rem' }}>최근에 작성된 답안</Box>
+                {loading ? ( <Typography>Loading data...</Typography>
+                ) : (
+                explanations.map((item) => (
+                  <Box key={item.id} sx={{ mt: 2, p: '0.8rem', mb: 2, boxShadow: 3, backgroundColor: 'white', color: 'black', cursor: 'pointer' }}>
+                    <Link to={`/study/view/${item.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <Typography sx={{ width:'80%' }} variant="subtitle1">
+                          <strong>{item.question.questiontext}</strong><br />
+                          {item.exam.examname} {item.examnumber.year}년 {item.examnumber.examnumber}
+                          회 {item.question.questionnumber1}과목 {item.question.questionnumber2}문항
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: 'gray', width:'20%', textAlign: 'right' }}>
+                          좋아요: {item.like.length}개
+                        </Typography>
+                      </Box>
+                    </Link>
                   </Box>
-                </Link>
-              </Box>
-            )))}
-        </Box>
-        {userInfo && (
-          <Box sx={{ width:'25%' }}>
-            <Box variant="h6" sx={{ mb: '1rem' }}>나의 개인정보</Box>
-            <Box sx={{ p: '0.8rem', mb: 2, boxShadow: 3, backgroundColor: 'white', color: 'black', 
-                       mt: 2, display: 'flex', minHeight: '200px', flexDirection: 'column', gap: '1rem' }}>
-              <Typography>닉네임: {userInfo.nickname}</Typography>
-              <Typography>작성한 게시글 수: {userStats.posts}</Typography>
-              <Typography>획득한 좋아요 수: {userStats.totalLikes}</Typography>
-              <Typography>획득한 북마크 수: {userStats.totalBookmarks}</Typography>
+                )))}
             </Box>
+            {userInfo && (
+              <Box sx={{ width:'25%' }}>
+                <Box variant="h6" sx={{ mb: '1rem' }}>나의 개인정보</Box>
+                <Box sx={{ p: '0.8rem', mb: 2, boxShadow: 3, backgroundColor: 'white', color: 'black', 
+                           mt: 2, display: 'flex', minHeight: '200px', flexDirection: 'column', gap: '1rem' }}>
+                  <Typography>닉네임: {userInfo.nickname}</Typography>
+                  <Typography>작성한 게시글 수: {userStats.posts}</Typography>
+                  <Typography>획득한 좋아요 수: {userStats.totalLikes}</Typography>
+                  <Typography>획득한 북마크 수: {userStats.totalBookmarks}</Typography>
+                </Box>
+              </Box>
+            )}
           </Box>
-        )}
-      </Box>
+          </>
+        )
+        : 
+        <>
+        <Box variant="h6" sx={{ mb: '1rem' }}>로그인 하시면 이 곳에 많은 정보가 표시됩니다.</Box>
+        </>
+        }
+
     </div>
   );
 };

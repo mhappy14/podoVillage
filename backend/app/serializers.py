@@ -232,7 +232,7 @@ class ExamSerializer(serializers.ModelSerializer):
             self.Meta.depth = 3
 
 #######################에세이#######################
-#######################에세이#######################
+
 class AuthorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Author
@@ -345,3 +345,22 @@ class PaperSerializer(serializers.ModelSerializer):
             self.Meta.depth = 0
         else:
             self.Meta.depth = 1
+
+#######################위키#######################
+
+class WikiPageSerializer(serializers.ModelSerializer):
+    nickname_username = serializers.ReadOnlyField(source='nickname.username')
+
+    class Meta:
+        model = WikiPage
+        fields = ['id', 'title', 'slug', 'content', 'created_at', 'updated_at', 'nickname', 'nickname_username']
+        read_only_fields = ['slug', 'created_at', 'updated_at', 'nickname', 'nickname_username']
+
+
+
+class WikiVersionSerializer(serializers.ModelSerializer):
+    nickname_username = serializers.ReadOnlyField(source='nickname.username')
+
+    class Meta:
+        model = WikiVersion
+        fields = ['id', 'content', 'edited_at', 'nickname', 'nickname_username']

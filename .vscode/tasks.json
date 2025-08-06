@@ -1,0 +1,26 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Backend",
+      "type": "shell",
+      "command": "cd backend && py manage.py runserver",
+      "group": "build",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Frontend",
+      "type": "shell",
+      "command": "cd frontend && npm run dev",
+      "group": "build",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Start All",   //keybindings.json 에 단축키 저장
+      "dependsOn": ["Run Backend", "Run Frontend"],
+      "dependsOrder": "parallel"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-from rest_framework import generics, permissions, status, viewsets, filters
+from rest_framework import filters, generics, permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.decorators import action, api_view, permission_classes
@@ -16,6 +16,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 import requests
+from app.views_invest import stock_history
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -293,7 +294,7 @@ class CreateCommentViewset(viewsets.ModelViewSet):
         serializer.save(nickname=self.request.user)
 
 #######################에세이#######################
-#######################에세이#######################
+
 class AuthorViewSet(viewsets.ModelViewSet):
     queryset = Author.objects.all()
     serializer_class = AuthorSerializer
@@ -309,3 +310,32 @@ class PublicationViewSet(viewsets.ModelViewSet):
 class PaperViewSet(viewsets.ModelViewSet):
     queryset = Paper.objects.all()
     serializer_class = PaperSerializer
+
+#######################위키#######################
+
+class WikiPageViewSet(viewsets.ModelViewSet):
+    queryset = WikiPage.objects.all().order_by('-updated_at')
+    serializer_class = WikiPageSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def perform_create(self, serializer):
+        serializer.save(nickname=self.request.user)
+
+    def perform_update(self, serializer):
+        instance = self.get_object()
+
+        if instance.content != self.request.data.get("content", ""):
+            WikiVersion.objects.create(
+                page=instance,
+                content=instance.content,
+                nickname=self.request.user  # null 허용이므로 비로그인 처리도 가능
+            )
+
+        serializer.save()
+				
+    @action(detail=True, methods=['get'])
+    def versions(self, request, pk=None):
+        page = self.get_object()
+        versions = page.versions.all().order_by('-edited_at')
+        serializer = WikiVersionSerializer(versions, many=True)
+        return Response(serializer.data)
