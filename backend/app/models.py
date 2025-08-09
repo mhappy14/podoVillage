@@ -276,5 +276,11 @@ class WikiVersion(models.Model):
     edited_at = models.DateTimeField(auto_now_add=True)
     nickname = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='wiki_versions')
 
+    class Meta:
+        ordering = ['-edited_at']  
+        indexes = [
+            models.Index(fields=['page', '-edited_at']),
+        ]
+
     def __str__(self):
         return f"{self.page.title} - {self.edited_at.strftime('%Y-%m-%d %H:%M:%S')}"

@@ -14,36 +14,55 @@ const WikiEdit = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    AxiosInstance.get(`/wiki/?slug=${slug}`)
-      .then((res) => {
-        if (res.data.length > 0) {
-          setPage(res.data[0]);
-        } else {
-          setError('문서를 찾을 수 없습니다.');
-        }
-      })
-      .catch(() => setError('문서를 불러오는 데 실패했습니다.'))
-      .finally(() => setLoading(false));
+    let alive = true;
+    const fetchPage = async () => {
+      setLoading(true);
+      try {
+        const res = await AxiosInstance.get(`/wiki/${slug}/`);
+        if (!alive) return;
+        setPage(res.data);
+      } catch (e) {
+        if (!alive) return;
+        setError('문서를 불러오는 데 실패했거나 존재하지 않습니다.');
+        console.error(e);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    };
+    fetchPage();
+    return () => { alive = false; };
   }, [slug]);
 
-  const handleSubmit = (values) => {
+  const handleSubmit = async (values) => {
+    // values는 보통 { title, content } 형태여야 합니다.
     setSubmitting(true);
-    AxiosInstance.put(`/wiki/${page.id}/`, values)
-      .then(() => {
-        message.success('문서가 수정되었습니다.');
-        navigate(`/wiki/view/${page.slug}`);
-      })
-      .catch(() => message.error('수정에 실패했습니다.'))
-      .finally(() => setSubmitting(false));
+    try {
+      await AxiosInstance.patch(`/wiki/${slug}/`, values);
+      setTimeout(() => navigate(`/wiki/view/${slug}`, { state: { justSaved: true } }), 100);
+    } catch (e) {
+      // 403 (로그인 필요), 400 (유효성), 기타 서버 오류 메시지 노출
+      const detail =
+        e?.response?.data?.detail ||
+        (typeof e?.response?.data === 'string' ? e.response.data : '') ||
+        '수정에 실패했습니다.';
+      message.error(detail);
+      console.error(e);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (loading) return <Spin size="large" style={{ marginTop: '2rem' }} />;
   if (error) return <Alert message={error} type="error" showIcon style={{ marginTop: '2rem' }} />;
+  if (!page) return null;
+
+  // WikiForm에 꼭 필요한 초기값만 넘기세요.
+  const initialValues = { title: page.title, content: page.content };
 
   return (
     <>
       <Typography.Title level={3} style={{ marginTop: '2rem' }}>문서 수정</Typography.Title>
-      <WikiForm initialValues={page} onFinish={handleSubmit} loading={submitting} />
+      <WikiForm initialValues={initialValues} onFinish={handleSubmit} loading={submitting} />
     </>
   );
 };

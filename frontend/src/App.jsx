@@ -18,6 +18,8 @@ import Literature from './components/Literature';
 import Place from './components/Place';
 import Wiki from './components/Wiki';
 import WikiView from './components/WikiView';
+import WikiVersionList from './components/WikiVersionList';
+import WikiVersionView from './components/WikiVersionView';
 import WikiEdit from './components/WikiEdit';
 import WikiCreate from './components/WikiCreate';
 import Invest from './components/Invest';
@@ -72,6 +74,8 @@ function App() {
                   <Route path="/place" element={<Place />} />
                   <Route path="/wiki" element={<Wiki />} />
                   <Route path="/wiki/view/:slug" element={<WikiView />} />
+                  <Route path="/wiki/view/:slug/versions" element={<WikiVersionList />} />
+                  <Route path="/wiki/view/:slug/version/:versionId" element={<WikiVersionView />} />
                   <Route path="/wiki/edit/:slug" element={<WikiEdit />} />
                   <Route path="/wiki/create" element={<WikiCreate />} />
                   <Route path="/invest" element={<Invest />} />

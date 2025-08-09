@@ -6,6 +6,7 @@ from knox.models import AuthToken
 from app.models import *
 from app.serializers import *
 from app.permissions import *
+from django.db import transaction
 from django.contrib.auth import get_user_model
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
@@ -317,25 +318,53 @@ class WikiPageViewSet(viewsets.ModelViewSet):
     queryset = WikiPage.objects.all().order_by('-updated_at')
     serializer_class = WikiPageSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    lookup_field = 'slug'
+    lookup_url_kwarg = 'slug'
 
+    @transaction.atomic
     def perform_create(self, serializer):
-        serializer.save(nickname=self.request.user)
+        # 페이지 생성 + 초기 버전 스냅샷
+        instance = serializer.save(nickname=self.request.user)
+        WikiVersion.objects.create(
+            page=instance,
+            content=instance.content,         # ✅ 초기 내용 스냅샷
+            nickname=self.request.user
+        )
 
+    @transaction.atomic
     def perform_update(self, serializer):
         instance = self.get_object()
+        new_content = self.request.data.get("content", instance.content)
+        content_changed = (instance.content != new_content)
 
-        if instance.content != self.request.data.get("content", ""):
+        # 먼저 페이지에 새 내용을 저장
+        instance = serializer.save()
+
+        # 내용이 바뀐 경우에만 버전 스냅샷 생성 (중복 저장 방지)
+        if content_changed:
             WikiVersion.objects.create(
                 page=instance,
-                content=instance.content,
-                nickname=self.request.user  # null 허용이므로 비로그인 처리도 가능
+                content=instance.content,      # ✅ "저장된 새 내용" 스냅샷
+                nickname=self.request.user
             )
 
-        serializer.save()
-				
     @action(detail=True, methods=['get'])
-    def versions(self, request, pk=None):
-        page = self.get_object()
-        versions = page.versions.all().order_by('-edited_at')
-        serializer = WikiVersionSerializer(versions, many=True)
+    def versions(self, request, slug=None, *args, **kwargs):
+        page_obj = self.get_object()
+        qs = page_obj.versions.all()          # Meta.ordering에 의해 최신순
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            serializer = WikiVersionSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = WikiVersionSerializer(qs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'], url_path='latest-version')
+    def latest_version(self, request, slug=None, *args, **kwargs):
+        page_obj = self.get_object()
+        latest = page_obj.versions.first()    # ✅ Meta.ordering 덕분에 first()가 최신
+        if not latest:
+            # 이론상 perform_create에서 항상 1개 생성되므로 거의 안 옴
+            return Response({"detail": "최신 버전이 없습니다."}, status=404)
+        serializer = WikiVersionSerializer(latest)
         return Response(serializer.data)

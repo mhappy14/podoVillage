@@ -357,7 +357,6 @@ class WikiPageSerializer(serializers.ModelSerializer):
         read_only_fields = ['slug', 'created_at', 'updated_at', 'nickname', 'nickname_username']
 
 
-
 class WikiVersionSerializer(serializers.ModelSerializer):
     nickname_username = serializers.ReadOnlyField(source='nickname.username')
 
