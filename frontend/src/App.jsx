@@ -1,5 +1,6 @@
+// App.jsx
 import React from 'react';
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Routes, Route, useLocation, Outlet } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import Navbar from './components/Navbar';
 import Home from './components/Home';
@@ -30,7 +31,6 @@ import PasswordReset from './components/PasswordReset.jsx';
 
 function App() {
   const location = useLocation();
-  // 경로가 '/about'이면 App2.css, 아니면 App1.css를 적용
   const cssFile = location.pathname === '/about' ? '/App2.css' : '/App1.css';
 
   return (
@@ -39,22 +39,21 @@ function App() {
         <link key={cssFile} rel="stylesheet" type="text/css" href={cssFile} />
       </Helmet>
 
-      {/* Navbar를 고정시킴 */}
+      {/* Navbar 고정 */}
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, width: '100%', zIndex: 1000 }}>
         <Navbar />
       </div>
 
-      {/* Navbar 높이만큼 상단 여백 추가 */}
       <div>
         <Routes>
-          {/* 최대 폭 제한 없이 전체 화면을 사용하는 페이지 */}
+          {/* 전체 화면 페이지 */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/request/password_reset" element={<PasswordResetRequest />} />
           <Route path="/password-reset/:token" element={<PasswordReset />} />
-          <Route path="/about" element={<About />} /> 
+          <Route path="/about" element={<About />} />
 
-          {/* 최대 폭 1248px로 제한되는 페이지 */}
+          {/* 고정 폭 페이지 */}
           <Route
             path="/*"
             element={
@@ -72,12 +71,15 @@ function App() {
                   <Route path="/paper/edit/:id" element={<PaperEdit />} />
                   <Route path="/literature" element={<Literature />} />
                   <Route path="/place" element={<Place />} />
+
+                  {/* ✅ 위키: 슬러그 기반 */}
                   <Route path="/wiki" element={<Wiki />} />
-                  <Route path="/wiki/view/:slug" element={<WikiView />} />
-                  <Route path="/wiki/view/:slug/versions" element={<WikiVersionList />} />
-                  <Route path="/wiki/view/:slug/version/:versionId" element={<WikiVersionView />} />
+                  <Route path="/wiki/view/:title" element={<WikiView />} />
+                  <Route path="/wiki/view/:title/versions" element={<WikiVersionList />} />
+                  <Route path="/wiki/view/:title/version/:versionId" element={<WikiVersionView />} />
                   <Route path="/wiki/edit/:slug" element={<WikiEdit />} />
                   <Route path="/wiki/create" element={<WikiCreate />} />
+
                   <Route path="/invest" element={<Invest />} />
                   <Route path="/mypage" element={<Mypage />} />
                 </Routes>

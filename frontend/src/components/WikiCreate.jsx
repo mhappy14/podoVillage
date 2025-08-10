@@ -14,7 +14,7 @@ const WikiCreate = () => {
     AxiosInstance.post('/wiki/', values)
       .then((res) => {
         message.success('문서가 생성되었습니다.');
-        navigate(`/wiki/view/${res.data.slug}`);
+        navigate(`/wiki/view/${encodeURIComponent(res.data.title)}`);
       })
       .catch(() => message.error('생성에 실패했습니다.'))
       .finally(() => setSubmitting(false));

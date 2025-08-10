@@ -4,21 +4,23 @@
     {
       "label": "Run Backend",
       "type": "shell",
-      "command": "cd backend && py manage.py runserver",
-      "group": "build",
+      "command": "${workspaceFolder}\\backend\\venv\\Scripts\\python.exe",
+      "args": ["manage.py", "runserver"],
+      "options": { "cwd": "${workspaceFolder}\\backend" },
       "isBackground": true,
       "problemMatcher": []
     },
     {
       "label": "Run Frontend",
       "type": "shell",
-      "command": "cd frontend && npm run dev",
-      "group": "build",
+      "command": "npm",
+      "args": ["run", "dev"],
+      "options": { "cwd": "${workspaceFolder}\\frontend" },
       "isBackground": true,
       "problemMatcher": []
     },
     {
-      "label": "Start All",   //keybindings.json 에 단축키 저장
+      "label": "Start All",
       "dependsOn": ["Run Backend", "Run Frontend"],
       "dependsOrder": "parallel"
     }

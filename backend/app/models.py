@@ -257,18 +257,22 @@ class Comment(models.Model):
 class WikiPage(models.Model):
     title = models.CharField(max_length=200, unique=True)
     slug = models.SlugField(max_length=200, unique=True, blank=True)
-    content = models.TextField()
+    content = models.TextField(blank=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     nickname = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='wiki_pages')
 
     def save(self, *args, **kwargs):
         if not self.slug:
-            self.slug = slugify(self.title)
+            base = slugify(self.title, allow_unicode=True)  # 한글 허용
+            candidate = base or "page"
+            i = 2
+            # 유니크 보장
+            while WikiPage.objects.filter(slug=candidate).exclude(pk=self.pk).exists():
+                candidate = f"{base}-{i}"
+                i += 1
+            self.slug = candidate
         super().save(*args, **kwargs)
-
-    def __str__(self):
-        return self.title
 
 class WikiVersion(models.Model):
     page = models.ForeignKey('WikiPage', on_delete=models.CASCADE, related_name='versions')

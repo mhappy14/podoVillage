@@ -1,34 +1,74 @@
-// components/WikiView.jsx
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import AxiosInstance from './AxiosInstance';
 import parseWikiSyntax from './WikiParser';
 import { Card, Typography, Button, Spin, Alert, Space, Tag, message } from 'antd';
 
-const { Title, Paragraph, Text } = Typography;
+const { Title, Paragraph } = Typography;
 
 const WikiView = () => {
-  const { slug } = useParams();
+  const { title } = useParams();
+  const decodedTitle = decodeURIComponent(title || '').trim();
+
   const [page, setPage] = useState(null);
   const [latestVersion, setLatestVersion] = useState(null);
+  const [slug, setSlug] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
-  const isLoggedIn = !!localStorage.getItem('Token');
 
+  const isLoggedIn = !!localStorage.getItem('Token');
   const navigate = useNavigate();
   const location = useLocation();
-
   const flashedRef = useRef(false);
 
   useEffect(() => {
     if (!flashedRef.current && location.state?.justSaved) {
       flashedRef.current = true;
       message.success('최신 버전으로 업데이트되었습니다.');
-      // state 제거해서 새로고침/뒤로가기 시 중복 방지
       navigate(location.pathname, { replace: true, state: {} });
     }
   }, [location, navigate]);
+
+  useEffect(() => {
+    let alive = true;
+    const run = async () => {
+      if (!title) {
+        setError('잘못된 문서 주소입니다.');
+        setLoading(false);
+        return;
+      }
+      try {
+        const pageRes = await AxiosInstance.get(`/wiki/by-title/${encodeURIComponent(decodedTitle)}/`);
+        if (!alive) return;
+        setPage(pageRes.data);
+        setSlug(pageRes.data.slug);
+
+        try {
+          const latestRes = await AxiosInstance.get(`/wiki/${pageRes.data.slug}/latest-version/`);
+          if (!alive) return;
+          setLatestVersion(latestRes?.data && !latestRes.data.detail ? latestRes.data : null);
+        } catch {
+          setLatestVersion(null);
+        }
+      } catch (e) {
+        if (!alive) return;
+        setError('문서를 불러오는 데 실패했습니다.');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    };
+    run();
+    return () => { alive = false; };
+  }, [title]);
+
+  if (loading) return <Spin size="large" style={{ marginTop: '2rem' }} />;
+  if (error) return <Alert message={error} type="error" showIcon style={{ marginTop: '2rem' }} />;
+  if (!page) return <Alert message="문서를 찾을 수 없습니다." type="warning" showIcon style={{ marginTop: '2rem' }} />;
+
+  const contentHtml = parseWikiSyntax(latestVersion?.content ?? page.content);
+  const versionBadge = latestVersion
+    ? `v${latestVersion.id} • ${new Date(latestVersion.edited_at).toLocaleString()}`
+    : '초기본/버전 없음';
 
   const handleContentClick = (e) => {
     const a = e.target.closest('a');
@@ -36,46 +76,11 @@ const WikiView = () => {
     const href = a.getAttribute('href');
     if (href && href.startsWith('/wiki/view/')) {
       e.preventDefault();
-      // 절대/상대 케이스 모두 처리
       const url = new URL(href, window.location.origin);
-      navigate(`/wiki/view/${decodeURIComponent(url.pathname.split('/').pop())}`);
+      const rawTail = decodeURIComponent(url.pathname.replace(/^\/wiki\/view\//, ''));
+      navigate(`/wiki/view/${rawTail}`);
     }
   };
-
-  useEffect(() => {
-    let alive = true;
-    const run = async () => {
-      try {
-        const [pageRes, latestRes] = await Promise.all([
-          AxiosInstance.get(`/wiki/${slug}/`),
-          AxiosInstance.get(`/wiki/${slug}/latest-version/`).catch(() => null),
-        ]);
-        if (!alive) return;
-        setPage(pageRes.data);
-        if (latestRes && latestRes.data && !latestRes.data.detail) {
-          setLatestVersion(latestRes.data);
-        } else {
-          setLatestVersion(null); // 최신 버전 없으면 null
-        }
-      } catch (e) {
-        setError('문서를 불러오는 데 실패했습니다.');
-        console.error(e);
-      } finally {
-        if (alive) setLoading(false);
-      }
-    };
-    run();
-    return () => { alive = false; };
-  }, [slug]);
-
-  if (loading) return <Spin size="large" style={{ marginTop: '2rem' }} />;
-  if (error) return <Alert message={error} type="error" showIcon style={{ marginTop: '2rem' }} />;
-  if (!page) return null;
-
-  const contentHtml = parseWikiSyntax(latestVersion?.content ?? page.content);
-  const versionBadge = latestVersion
-    ? `v${latestVersion.id} • ${new Date(latestVersion.edited_at).toLocaleString()}`
-    : '초기본/버전 없음';
 
   return (
     <Card
@@ -83,14 +88,11 @@ const WikiView = () => {
       extra={
         <Space wrap>
           <Tag color="default">{versionBadge}</Tag>
-          <Link to={`/wiki/view/${page.slug}/versions`}>
+          <Link to={`/wiki/view/${title}/versions`}>
             <Button>버전 목록 보기</Button>
           </Link>
-          <Link to={isLoggedIn ? `/wiki/edit/${page.slug}` : '#'}>
-            <Button
-              type="primary"
-              disabled={!isLoggedIn}
-            >
+          <Link to={isLoggedIn ? `/wiki/edit/${title}` : '#'}>
+            <Button type="primary" disabled={!isLoggedIn}>
               {isLoggedIn ? '수정' : '수정(로그인필요)'}
             </Button>
           </Link>

@@ -323,35 +323,22 @@ class WikiPageViewSet(viewsets.ModelViewSet):
 
     @transaction.atomic
     def perform_create(self, serializer):
-        # 페이지 생성 + 초기 버전 스냅샷
         instance = serializer.save(nickname=self.request.user)
-        WikiVersion.objects.create(
-            page=instance,
-            content=instance.content,         # ✅ 초기 내용 스냅샷
-            nickname=self.request.user
-        )
+        WikiVersion.objects.create(page=instance, content=instance.content, nickname=self.request.user)
 
     @transaction.atomic
     def perform_update(self, serializer):
         instance = self.get_object()
         new_content = self.request.data.get("content", instance.content)
         content_changed = (instance.content != new_content)
-
-        # 먼저 페이지에 새 내용을 저장
         instance = serializer.save()
-
-        # 내용이 바뀐 경우에만 버전 스냅샷 생성 (중복 저장 방지)
         if content_changed:
-            WikiVersion.objects.create(
-                page=instance,
-                content=instance.content,      # ✅ "저장된 새 내용" 스냅샷
-                nickname=self.request.user
-            )
+            WikiVersion.objects.create(page=instance, content=instance.content, nickname=self.request.user)
 
     @action(detail=True, methods=['get'])
     def versions(self, request, slug=None, *args, **kwargs):
         page_obj = self.get_object()
-        qs = page_obj.versions.all()          # Meta.ordering에 의해 최신순
+        qs = page_obj.versions.all()
         page = self.paginate_queryset(qs)
         if page is not None:
             serializer = WikiVersionSerializer(page, many=True)
@@ -362,9 +349,14 @@ class WikiPageViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='latest-version')
     def latest_version(self, request, slug=None, *args, **kwargs):
         page_obj = self.get_object()
-        latest = page_obj.versions.first()    # ✅ Meta.ordering 덕분에 first()가 최신
+        latest = page_obj.versions.first()
         if not latest:
-            # 이론상 perform_create에서 항상 1개 생성되므로 거의 안 옴
             return Response({"detail": "최신 버전이 없습니다."}, status=404)
         serializer = WikiVersionSerializer(latest)
+        return Response(serializer.data)
+		
+    @action(detail=False, methods=['get'], url_path=r'by-title/(?P<title>.+)')
+    def by_title(self, request, title=None):
+        page = get_object_or_404(WikiPage, title=title)
+        serializer = self.get_serializer(page)
         return Response(serializer.data)

@@ -1,4 +1,3 @@
-// components/WikiVersionView.jsx
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import AxiosInstance from './AxiosInstance';
@@ -8,47 +7,39 @@ import { Card, Typography, Spin, Alert, Space, Button, Tag } from 'antd';
 const { Title, Paragraph, Text } = Typography;
 
 const WikiVersionView = () => {
-  const { slug, versionId } = useParams();
+  const { title, versionId } = useParams();
+  const decodedTitle = decodeURIComponent(title || '').trim();
+
   const [version, setVersion] = useState(null);
   const [pageTitle, setPageTitle] = useState('');
+  const [slug, setSlug] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    let alive = true;
-
-    const fetchData = async () => {
-      setLoading(true);
+    const run = async () => {
       try {
-        // 1) 문서 정보 불러오기 (제목용)
-        const pageRes = await AxiosInstance.get(`/wiki/${slug}/`);
-        if (alive) setPageTitle(pageRes.data.title);
+        const pageRes = await AxiosInstance.get(`/wiki/by-title/${encodeURIComponent(decodedTitle)}/`);
+        if (!pageRes.data.slug) throw new Error();
+        setSlug(pageRes.data.slug);
+        setPageTitle(pageRes.data.title);
 
-        // 2) 버전 목록 불러오기
-        const versionRes = await AxiosInstance.get(`/wiki/${slug}/versions/`);
+        const versionRes = await AxiosInstance.get(`/wiki/${pageRes.data.slug}/versions/`);
         const results = versionRes.data.results ?? versionRes.data;
         const found = results.find(v => String(v.id) === String(versionId));
-
-        if (alive) {
-          if (found) {
-            setVersion(found);
-          } else {
-            setError('해당 버전을 찾을 수 없습니다.');
-          }
+        if (found) {
+          setVersion(found);
+        } else {
+          setError('해당 버전을 찾을 수 없습니다.');
         }
-      } catch (e) {
-        if (alive) {
-          setError('버전을 불러오는 데 실패했습니다.');
-          console.error(e);
-        }
+      } catch {
+        setError('버전을 불러오는 데 실패했습니다.');
       } finally {
-        if (alive) setLoading(false);
+        setLoading(false);
       }
     };
-
-    fetchData();
-    return () => { alive = false; };
-  }, [slug, versionId]);
+    run();
+  }, [decodedTitle, versionId]);
 
   if (loading) return <Spin size="large" style={{ marginTop: '2rem' }} />;
   if (error) return <Alert message={error} type="error" showIcon style={{ marginTop: '2rem' }} />;
@@ -63,10 +54,10 @@ const WikiVersionView = () => {
         <Space wrap>
           <Text type="secondary">작성자 : {version.nickname_username || '익명'}</Text>
           <Tag>{new Date(version.edited_at).toLocaleString()}</Tag>
-          <Link to={`/wiki/view/${slug}/versions`}>
+          <Link to={`/wiki/view/${encodeURIComponent(decodedTitle)}/versions`}>
             <Button>버전 목록</Button>
           </Link>
-          <Link to={`/wiki/view/${slug}`}>
+          <Link to={`/wiki/view/${encodeURIComponent(decodedTitle)}`}>
             <Button type="primary">최신 문서</Button>
           </Link>
         </Space>
