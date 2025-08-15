@@ -7,6 +7,7 @@ from app.models import *
 from app.serializers import *
 from app.permissions import *
 from django.db import transaction
+from django.db.models import Q
 from django.contrib.auth import get_user_model
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
@@ -354,9 +355,30 @@ class WikiPageViewSet(viewsets.ModelViewSet):
             return Response({"detail": "최신 버전이 없습니다."}, status=404)
         serializer = WikiVersionSerializer(latest)
         return Response(serializer.data)
-		
+
     @action(detail=False, methods=['get'], url_path=r'by-title/(?P<title>.+)')
     def by_title(self, request, title=None):
         page = get_object_or_404(WikiPage, title=title)
         serializer = self.get_serializer(page)
+        return Response(serializer.data)
+		
+    @action(detail=False, methods=['get'], url_path=r't/(?P<title>.+)')
+    def by_title_short(self, request, title=None):
+        page = get_object_or_404(WikiPage, title=title)
+        serializer = self.get_serializer(page)
+        return Response(serializer.data)
+
+    # ✅ 최근 문서 10개
+    @action(detail=False, methods=['get'], url_path='recent')
+    def recent(self, request, *args, **kwargs):
+        qs = WikiPage.objects.order_by('-updated_at')[:10]
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='search')
+    def search(self, request, *args, **kwargs):
+        q = request.query_params.get('q', '').strip()
+        if not q: return Response([], status=200)
+        qs = WikiPage.objects.filter(Q(title__icontains=q)).order_by('-updated_at')[:10]
+        serializer = self.get_serializer(qs, many=True)
         return Response(serializer.data)

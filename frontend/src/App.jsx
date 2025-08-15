@@ -22,7 +22,6 @@ import WikiView from './components/WikiView';
 import WikiVersionList from './components/WikiVersionList';
 import WikiVersionView from './components/WikiVersionView';
 import WikiEdit from './components/WikiEdit';
-import WikiCreate from './components/WikiCreate';
 import Invest from './components/Invest';
 import Mypage from './components/Mypage';
 import ProtectedRoute from './components/ProtectedRoutes';
@@ -74,11 +73,10 @@ function App() {
 
                   {/* ✅ 위키: 슬러그 기반 */}
                   <Route path="/wiki" element={<Wiki />} />
-                  <Route path="/wiki/view/:title" element={<WikiView />} />
-                  <Route path="/wiki/view/:title/versions" element={<WikiVersionList />} />
-                  <Route path="/wiki/view/:title/version/:versionId" element={<WikiVersionView />} />
-                  <Route path="/wiki/edit/:slug" element={<WikiEdit />} />
-                  <Route path="/wiki/create" element={<WikiCreate />} />
+                  <Route path="/wiki/v/*" element={<WikiView />} />
+                  <Route path="/wiki/v/:title/versionslist" element={<WikiVersionList />} />
+                  <Route path="/wiki/v/:title/versionslist/:id" element={<WikiVersionView />} />
+                  <Route path="/wiki/*" element={<WikiEdit />} />
 
                   <Route path="/invest" element={<Invest />} />
                   <Route path="/mypage" element={<Mypage />} />

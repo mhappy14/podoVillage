@@ -27,8 +27,8 @@ router.register('wiki', WikiPageViewSet, basename='wiki')
 
 urlpatterns = router.urls
 urlpatterns = router.urls + [
-    path('api/fred/', fred_proxy, name='fred_proxy'),
-    path('api/stock/<str:symbol>/', stock_history, name='stock-history')
+    path('fred/', fred_proxy, name='fred_proxy'),
+    path('stock/<str:symbol>/', stock_history, name='stock-history')
 ]
 
 # 1 시험명Exam(시험명examname)

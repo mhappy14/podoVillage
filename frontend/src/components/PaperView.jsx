@@ -8,7 +8,7 @@ import DOMPurify from 'dompurify';
 const { Title, Text } = Typography;
 
 const PaperView = () => {
-  const { id } = useParams(); // URL의 id 파라미터
+  const { id } = useParams();
   const navigate = useNavigate();
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [Papers, setPapers] = useState([]);
@@ -22,25 +22,22 @@ const PaperView = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [user, setUser] = useState(null);
 
+  // 배열 표준화 유틸
+  const toList = (raw) => (Array.isArray(raw) ? raw : (Array.isArray(raw?.results) ? raw.results : []));
+
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // 모든 에세이 가져오기
         const paperRes = await AxiosInstance.get('paper/');
-        setPapers(paperRes.data);
+        setPapers(toList(paperRes.data));
 
-        // 선택된 에세이 및 관련 댓글 가져오기
         const selectedPaperRes = await AxiosInstance.get(`paper/${id}/`);
-        setSelectedPaper(selectedPaperRes.data);
+        setSelectedPaper(selectedPaperRes.data ?? null);
 
-        // 전체 댓글 가져온 후, Paper id 기준 필터링
         const commentRes = await AxiosInstance.get('comment/');
-        const filteredComments = commentRes.data.filter(
-          (c) => c.Paper?.id === parseInt(id, 10)
-        );
-        setComments(filteredComments);
+        const allComments = toList(commentRes.data);
+        setComments(allComments.filter((c) => c?.Paper?.id === Number(id)));
 
-        // 사용자 정보 가져오기
         const token = localStorage.getItem('Token');
         if (token) {
           const userRes = await AxiosInstance.get('users/me/', {
@@ -48,6 +45,9 @@ const PaperView = () => {
           });
           setUser(userRes.data);
           setLoggedIn(true);
+        } else {
+          setLoggedIn(false);
+          setUser(null);
         }
       } catch (error) {
         console.error('Error fetching data:', error);
@@ -60,63 +60,43 @@ const PaperView = () => {
   }, [id]);
 
   const itemsPerPage = 10;
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  
+
   const filteredPapers = useMemo(() => {
-    let filtered = Papers;
+    const src = Array.isArray(Papers) ? Papers : [];
+    let filtered = src;
+
     if (selectedCategory) {
-      filtered = filtered.filter((paper) => paper.publication?.category === selectedCategory);
+      filtered = filtered.filter((p) => p?.publication?.category === selectedCategory);
     }
     if (selectedYear) {
-      filtered = filtered.filter((paper) => paper.publication?.year === parseInt(selectedYear, 10));
+      filtered = filtered.filter((p) => p?.publication?.year === parseInt(selectedYear, 10));
     }
     if (selectedAuthor) {
-      filtered = filtered.filter((paper) =>
-        paper.publication?.author?.some((author) => author.author === selectedAuthor)
+      filtered = filtered.filter((p) =>
+        Array.isArray(p?.publication?.author) &&
+        p.publication.author.some((a) => a?.author === selectedAuthor)
       );
     }
     return filtered;
   }, [Papers, selectedCategory, selectedYear, selectedAuthor]);
 
   const sortedPapers = useMemo(() => {
-    return [...filteredPapers].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const arr = Array.isArray(filteredPapers) ? filteredPapers : [];
+    return arr.slice().sort((a, b) => new Date(b?.created_at || 0) - new Date(a?.created_at || 0));
   }, [filteredPapers]);
 
+  const total = sortedPapers.length;
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const paginatedPapers = sortedPapers.slice(indexOfFirstItem, indexOfLastItem);
 
-  const getDynamicText = (paper) => {
-    let dynamicText = '';
-    const category = paper.publication?.category;
-    if (category === 'research') {
-      dynamicText = (<>{paper.publication.extra_author}, {paper.publication.title}({paper.publication.agency.agency}, {paper.publication.year})</>);
-    } else if (category === 'article') {
-      dynamicText = (<>{paper.publication.extra_author}, "{paper.publication.title}," {paper.publication.agency.agency} {paper.publication.volume}, no.{paper.publication.issue} ({paper.publication.year}):{paper.publication.start_page}-{paper.publication.end_page}</>);
-    } else if (category === 'dissertation') {
-      dynamicText = (<>{paper.publication.extra_author}, "{paper.publication.title}," (박사학위, {paper.publication.agency.agency}, {paper.publication.year})</>);
-    } else if (category === 'thesis') {
-      dynamicText = (<>{paper.publication.extra_author}, "{paper.publication.title}," (석사학위, {paper.publication.agency.agency}, {paper.publication.year})</>);
-    }
-    return dynamicText;
-  };
-
-  const handlePageChange = (page) => {
-    setCurrentPage(page);
-  };
-
-  const handleCommentChange = (e) => {
-    setComment(e.target.value);
-  };
+  const handlePageChange = (page) => setCurrentPage(page);
+  const handleCommentChange = (e) => setComment(e.target.value);
 
   const handleCommentSubmit = async () => {
-    if (!loggedIn) {
-      alert('로그인이 필요합니다.');
-      return;
-    }
-    if (!comment.trim()) {
-      alert('댓글 내용을 입력하세요.');
-      return;
-    }
+    if (!loggedIn) return alert('로그인이 필요합니다.');
+    if (!comment.trim()) return alert('댓글 내용을 입력하세요.');
+
     try {
       const res = await AxiosInstance.post('comment/', { content: comment, Paper: selectedPaper.id });
       setComment('');
@@ -127,47 +107,56 @@ const PaperView = () => {
     }
   };
 
-  const handleEditClick = () => {
-    navigate(`/paper/edit/${id}`, { state: { selectedPaper } });
+  const handleEditClick = () => navigate(`/paper/edit/${id}`, { state: { selectedPaper } });
+
+  const getDynamicNode = (paper) => {
+    const pub = paper?.publication;
+    const category = pub?.category;
+    if (category === 'research') {
+      return <>{pub?.extra_author}, {pub?.title}({pub?.agency?.agency}, {pub?.year})</>;
+    }
+    if (category === 'article') {
+      return <>{pub?.extra_author}, "{pub?.title}," {pub?.agency?.agency} {pub?.volume}, no.{pub?.issue} ({pub?.year}):{pub?.start_page}-{pub?.end_page}</>;
+    }
+    if (category === 'dissertation') {
+      return <>{pub?.extra_author}, "{pub?.title}," (박사학위, {pub?.agency?.agency}, {pub?.year})</>;
+    }
+    if (category === 'thesis') {
+      return <>{pub?.extra_author}, "{pub?.title}," (석사학위, {pub?.agency?.agency}, {pub?.year})</>;
+    }
+    return null;
   };
 
   return (
     <Space direction="vertical" style={{ width: '100%', padding: '20px' }} size="large">
-      {/* 글 상세 내용 */}
       {selectedPaper ? (
         <Card style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
           <Row justify="space-between">
-            {/* 타이틀 및 서적 제목 */}
             <Col flex="auto">
               <Title level={3} style={{ margin: 0, whiteSpace: 'nowrap' }}>
-                {selectedPaper.title}
+                {selectedPaper?.title ?? '-'}
               </Title>
-              <Text>
-                {getDynamicText(selectedPaper)}
-              </Text>
+              <Text>{getDynamicNode(selectedPaper)}</Text>
             </Col>
-            {/* 연도, 카테고리, 작성자 */}
             <Col style={{ width: 200, textAlign: 'right' }}>
               <Text strong>
-                {selectedPaper.publication.year}년 ({selectedPaper.publication.category})
+                {(selectedPaper?.publication?.year ?? '-') }년 ({selectedPaper?.publication?.category ?? '-'})
               </Text>
               <br />
               <Text>
-                작성자 {selectedPaper.nickname ? selectedPaper.nickname.nickname : 'null'}
+                작성자 {selectedPaper?.nickname?.nickname ?? 'null'}
               </Text>
             </Col>
           </Row>
           <Divider />
-          {/* 본문 */}
           <div
             dangerouslySetInnerHTML={{
-              __html: DOMPurify.sanitize(selectedPaper.contents),
+              __html: DOMPurify.sanitize(selectedPaper?.contents ?? ''),
             }}
             style={{ marginBottom: '1rem' }}
           />
           <Row justify="center" gutter={16}>
-            {/* 수정 버튼 (작성자와 로그인 사용자가 일치할 경우) */}
-            {user && selectedPaper.nickname && user.id === selectedPaper.nickname.id && (
+            {user && selectedPaper?.nickname && user.id === selectedPaper.nickname.id && (
               <Col>
                 <Button type="primary" danger onClick={handleEditClick}>
                   수정
@@ -176,17 +165,16 @@ const PaperView = () => {
             )}
             <Col>
               <Button type="primary">
-                좋아요 {selectedPaper.likes}
+                좋아요 {selectedPaper?.likes ?? 0}
               </Button>
             </Col>
             <Col>
               <Button>
-                북마크 {selectedPaper.bookmarks}
+                북마크 {selectedPaper?.bookmarks ?? 0}
               </Button>
             </Col>
           </Row>
           <Divider />
-          {/* 댓글 영역 */}
           <Comments
             filteredComments={comments}
             comment={comment}
@@ -203,58 +191,45 @@ const PaperView = () => {
       <Flex>
         {loading ? (
           <Text>Loading...</Text>
-            ) : (
-          <Flex vertical style={{ margin: '1rem 0 0 0',
-            width: '100%', }}>
+        ) : (
+          <Flex vertical style={{ margin: '1rem 0 0 0', width: '100%' }}>
             {paginatedPapers.map((paper) => {
-              let dynamicText = '';
-              const category = paper.publication?.category;
-
-              if (category === 'research') {
-                dynamicText = (<>{paper.publication.extra_author}, {paper.publication.title}({paper.publication.agency.agency}, {paper.publication.year})</>);
-              } else if (category === 'article') {
-                dynamicText = (<>{paper.publication.extra_author}, "{paper.publication.title}," {paper.publication.agency.agency} {paper.publication.volume}, no.{paper.publication.issue} ({paper.publication.year}):{paper.publication.start_page}-{paper.publication.end_page}</>);
-              } else if (category === 'dissertation') {
-                dynamicText = (<>{paper.publication.extra_author}, "{paper.publication.title}," (박사학위, {paper.publication.agency.agency}, {paper.publication.year})</>);
-              } else if (category === 'thesis') {
-                dynamicText = (<>{paper.publication.extra_author}, "{paper.publication.title}," (석사학위, {paper.publication.agency.agency}, {paper.publication.year})</>);
-              }
-
+              const dynamicNode = getDynamicNode(paper);
               return (
                 <Space
-                  key={paper.id}
+                  key={paper?.id}
                   direction="vertical"
                   size={0}
                   style={{
-                    padding: '0.5rem 1rem 0.5rem 1rem',   // 상 우 하 좌
-                    margin: '0.5rem 0.5rem 0.5rem 0.5rem',   // 상 우 하 좌
-                    boxShadow: '0px 3px 6px rgba(0, 0, 0, 0.2)', // MUI boxShadow:3와 유사한 효과 (필요에 따라 조정)
+                    padding: '0.5rem 1rem',
+                    margin: '0.5rem',
+                    boxShadow: '0px 3px 6px rgba(0, 0, 0, 0.2)',
                     cursor: 'pointer',
-                    backgroundColor: selectedPaper?.id === paper.id ?'rgb(238, 247, 255)' : 'white',
+                    backgroundColor: selectedPaper?.id === paper?.id ? 'rgb(238, 247, 255)' : 'white',
                   }}
-                  onClick={() => navigate(`/paper/view/${paper.id}`)}
+                  onClick={() => navigate(`/paper/view/${paper?.id}`)}
                 >
-                  <Text style={{ fontSize: '0.7rem' }} >{paper.title}</Text>
-                  <Text style={{ fontSize: '0.7rem', color: 'gray' }} >{dynamicText}</Text>
+                  <Text style={{ fontSize: '0.7rem' }}>{paper?.title ?? '-'}</Text>
+                  <Text style={{ fontSize: '0.7rem', color: 'gray' }}>{dynamicNode}</Text>
                 </Space>
               );
             })}
           </Flex>
         )}
       </Flex>
-      
+
       <Flex style={{ display: 'flex', marginLeft: '2rem', marginRight: '2rem', marginTop: '2rem' }}>
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}></div>
+        <div style={{ flex: 1 }} />
         <div style={{ flex: 2, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-          <Pagination 
+          <Pagination
             current={currentPage}
-            total={Papers.length}
+            total={total}        // ✅ 필터/정렬 결과 기준
             pageSize={itemsPerPage}
             onChange={handlePageChange}
           />
         </div>
         <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-          <Button  type="primary" onClick={() => navigate('/paper/write')}>
+          <Button type="primary" onClick={() => navigate('/paper/write')}>
             Write
           </Button>
         </div>
