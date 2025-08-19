@@ -74,32 +74,6 @@ export default function WikiVersionView() {
       setError(null);
       setVersion(null);
 
-      // 1) /wikiversions/:id/ 시도
-      try {
-        const res1 = await AxiosInstance.get(`/wikiversions/${versionId}/`);
-        if (!alive) return;
-        if (res1?.data?.id) {
-          setVersion(res1.data);
-          setLoading(false);
-          return;
-        }
-      } catch (_) {
-        // 계속 진행
-      }
-
-      // 2) /wiki/:slug/versions/:id/ 시도
-      try {
-        const res2 = await AxiosInstance.get(`/wiki/${slug}/versions/${versionId}/`);
-        if (!alive) return;
-        if (res2?.data?.id) {
-          setVersion(res2.data);
-          setLoading(false);
-          return;
-        }
-      } catch (_) {
-        // 계속 진행
-      }
-
       // 3) 페이지네이션으로 탐색
       try {
         let pageQuery = '';

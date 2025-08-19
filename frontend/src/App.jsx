@@ -15,7 +15,7 @@ import Paper from './components/Paper';
 import PaperWrite from './components/PaperWrite';
 import PaperView from './components/PaperView';
 import PaperEdit from './components/PaperEdit';
-import Literature from './components/Literature';
+import Art from './components/Art';
 import Place from './components/Place';
 import Wiki from './components/Wiki';
 import WikiView from './components/WikiView';
@@ -31,6 +31,13 @@ import PasswordReset from './components/PasswordReset.jsx';
 function App() {
   const location = useLocation();
   const cssFile = location.pathname === '/about' ? '/App2.css' : '/App1.css';
+
+  function DefaultLayout() {
+    return <div className="contents"><Outlet /></div>;
+  }
+  function WikiLayout() {
+    return <div className="contents-wiki"><Outlet /></div>;
+  }
 
   return (
     <>
@@ -56,32 +63,33 @@ function App() {
           <Route
             path="/*"
             element={
-              <div className="contents">
                 <Routes>
-                  <Route path="/home" element={<Home />} />
-                  <Route path="/study" element={<Study />} />
-                  <Route path="/study/write" element={<StudyWrite />} />
-                  <Route path="/study/view/:id" element={<StudyView />} />
-                  <Route path="/study/edit/:id" element={<StudyEdit />} />
-                  <Route path="/paper" element={<Paper />} />
-                  <Route path="/paper/write" element={<PaperWrite />} />
-                  <Route path="/paper/view" element={<PaperView />} />
-                  <Route path="/paper/view/:id" element={<PaperView />} />
-                  <Route path="/paper/edit/:id" element={<PaperEdit />} />
-                  <Route path="/literature" element={<Literature />} />
-                  <Route path="/place" element={<Place />} />
+                  <Route element={<DefaultLayout />}>
+                    <Route path="/home" element={<Home />} />
+                    <Route path="/study" element={<Study />} />
+                    <Route path="/study/write" element={<StudyWrite />} />
+                    <Route path="/study/view/:id" element={<StudyView />} />
+                    <Route path="/study/edit/:id" element={<StudyEdit />} />
+                    <Route path="/paper" element={<Paper />} />
+                    <Route path="/paper/write" element={<PaperWrite />} />
+                    <Route path="/paper/view" element={<PaperView />} />
+                    <Route path="/paper/view/:id" element={<PaperView />} />
+                    <Route path="/paper/edit/:id" element={<PaperEdit />} />
+                    <Route path="/art" element={<Art />} />
+                    <Route path="/place" element={<Place />} />
+                    <Route path="/invest" element={<Invest />} />
+                    <Route path="/mypage" element={<Mypage />} />
+                  </Route>
 
-                  {/* ✅ 위키: 슬러그 기반 */}
-                  <Route path="/wiki" element={<Wiki />} />
-                  <Route path="/wiki/v/*" element={<WikiView />} />
-                  <Route path="/wiki/v/:title/versionslist" element={<WikiVersionList />} />
-                  <Route path="/wiki/v/:title/versionslist/:id" element={<WikiVersionView />} />
-                  <Route path="/wiki/*" element={<WikiEdit />} />
-
-                  <Route path="/invest" element={<Invest />} />
-                  <Route path="/mypage" element={<Mypage />} />
+                  <Route element={<WikiLayout />}>
+                    <Route path="/wiki" element={<Wiki />} >
+                      <Route path="v/*" element={<WikiView />} />
+                      <Route path="v/:title/versionslist" element={<WikiVersionList />} />
+                      <Route path="v/:title/versionslist/:id" element={<WikiVersionView />} />
+                      <Route path="v/:title/edit" element={<WikiEdit />} />
+                    </Route>
+                  </Route>
                 </Routes>
-              </div>
             }
           />
         </Routes>

@@ -81,7 +81,14 @@ const WikiVersionList = () => {
 
   return (
     <div style={{ maxWidth: 800, margin: '2rem auto' }}>
-      <Title level={3}>🕓 버전 목록 - {decodedTitle}</Title>
+      <Title level={3}>
+        <Link
+          to={`/wiki/v/${encodeURIComponent(decodedTitle)}`}
+          className="wiki-title-link"
+          aria-label={`${decodedTitle} 문서 보기`}
+        >
+        {decodedTitle}
+      </Link> - 버전 목록</Title>
       <List
         bordered
         dataSource={versions}

@@ -92,7 +92,7 @@ const About = () => {
                   <div className="roll-in-left" style={{ width: '90%', animationDelay: '9.8s'}}>
                       <h3 className="tabtitle  animate__animated animate__headShake animate__infinite">Study 탭은... </h3>
                       <Slide direction="left" cascade triggerOnce>
-                        <h4 className="tabsummary">기술사자격증 공부를 하며 </h4>
+                        <h4 className="tabsummary">자격증 등의 시험 공부를 하며 </h4>
                         <h4 className="tabsummary">자신만의 모범답안을 작성하고 </h4>
                         <h4 className="tabsummary">피드백을 얻는 수 있습니다.</h4>
                       </Slide>
@@ -104,7 +104,7 @@ const About = () => {
                   <div className="roll-in-top" style={{ width: '90%', animationDelay: '11.4s'}}>
                     <h3 className="tabtitle  animate__animated animate__headShake animate__infinite">Paper 탭은... </h3>
                     <Fade cascade>
-                      <h4 className="tabsummary">학술논문, 학위논문을 읽고</h4>
+                      <h4 className="tabsummary">학술논문, 학위논문 등을 읽고</h4>
                       <h4 className="tabsummary">필요한 내용을 발췌하여</h4>
                       <h4 className="tabsummary">메모할 수 있습니다.</h4>
                     </Fade>
@@ -114,9 +114,9 @@ const About = () => {
                 <div style={{ display: 'flex', width:'33%'}}>
                   <div style={{ width: '5%' }}></div>
                   <div className="roll-in-right" style={{ width: '90%', animationDelay: '10.6s'}}>
-                    <h3 className="tabtitle  animate__animated animate__headShake animate__infinite">Review 탭은...</h3>
+                    <h3 className="tabtitle  animate__animated animate__headShake animate__infinite">Art 탭은...</h3>
                     <Bounce direction="down" cascade triggerOnce>
-                      <h4 className="tabsummary">책, 영화, 공연을 감상하고</h4>
+                      <h4 className="tabsummary">도서, 영화, 공연을 감상하고</h4>
                       <h4 className="tabsummary">느낀점을 사람들과 공유할 수 있습니다.</h4>
                       <h4 className="tabsummary">제작 중입니다.</h4>
                     </Bounce>
@@ -139,24 +139,24 @@ const About = () => {
                 </div>
                 <div style={{ display: 'flex', width:'33%'}}>
                   <div style={{ width: '5%' }}></div>
-                  <div className="roll-in-bottom" style={{ width: '90%', animationDelay: '13.4'}}>
-                    <h3 className="tabtitle  animate__animated animate__headShake animate__infinite">Know-how 탭은... </h3>
-                    <Roll cascade triggerOnce>
-                    <h4 className="tabsummary">공부, 취업, 결혼, 육아 등</h4>
-                    <h4 className="tabsummary">살아가는데 필요한 절차의 방법을</h4>
-                    <h4 className="tabsummary">공유할 수 있습니다.</h4>
-                    </Roll>
+                  <div className="roll-in-right" style={{ width: '90%', animationDelay: '13s'}}>
+                    <h3 className="tabtitle  animate__animated animate__headShake animate__infinite">Invest 탭은...</h3>
+                    <JackInTheBox cascade triggerOnce>
+                      <h4 className="tabsummary">소중한 우리의 자산을 지키기 위하여</h4>
+                      <h4 className="tabsummary">경제를 이해하고 대법을 공유할 수 있습니다.</h4>
+                      <h4 className="tabsummary">제작 중 입니다.</h4>
+                    </JackInTheBox>
                     </div>
                   <div style={{ width: '5%' }}></div>
                 </div>
                 <div style={{ display: 'flex', width:'33%'}}>
                   <div style={{ width: '5%' }}></div>
                   <div className="roll-in-right" style={{ width: '90%', animationDelay: '13s'}}>
-                    <h3 className="tabtitle  animate__animated animate__headShake animate__infinite">Invest 탭은...</h3>
+                    <h3 className="tabtitle  animate__animated animate__headShake animate__infinite">Wiki 탭은...</h3>
                     <JackInTheBox cascade triggerOnce>
-                      <h4 className="tabsummary">소중한 우리의 자산을 지키기 위하여</h4>
-                      <h4 className="tabsummary">경제를 이해하고 대처하는 방법을 공유할 수 있습니다.</h4>
-                      <h4 className="tabsummary">제작 중 입니다.</h4>
+                      <h4 className="tabsummary">여러 분야에서 다뤄지는 개념에 대해</h4>
+                      <h4 className="tabsummary">많은 사람들이 함께</h4>
+                      <h4 className="tabsummary">설명을 기술할 수 있습니다.</h4>
                     </JackInTheBox>
                     </div>
                   <div style={{ width: '5%' }}></div>

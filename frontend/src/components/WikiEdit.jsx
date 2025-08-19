@@ -12,9 +12,7 @@ const WikiEdit = () => {
   // 경로에서 제목 추출: /wiki/<제목>/edit  또는 /wiki/edit/<제목> (구형 호환)
   const title = useMemo(() => {
     const p = location.pathname;
-    let m = p.match(/^\/wiki\/(.+?)\/edit\/?$/);
-    if (m) return decodeURIComponent(m[1]);
-    m = p.match(/^\/wiki\/edit\/(.+)$/);
+    let m = p.match(/^\/wiki\/v\/(.+?)\/edit\/?$/);
     if (m) return decodeURIComponent(m[1]);
     return '';
   }, [location.pathname]);

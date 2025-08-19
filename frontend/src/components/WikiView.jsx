@@ -122,7 +122,7 @@ export default function WikiView() {
           <Button
             type="primary"
             onClick={() =>
-              navigate(`/wiki/${encodeURIComponent(title)}/edit`, { state: { allowEdit: true } })
+              navigate(`/wiki/v/${encodeURIComponent(title)}/edit`, { state: { allowEdit: true } })
             }
             disabled={!isLoggedIn}
           >
@@ -139,7 +139,7 @@ export default function WikiView() {
             <Button
               type="dashed"
               onClick={() =>
-                navigate(`/wiki/${encodeURIComponent(title)}/edit`, { state: { allowEdit: true } })
+                navigate(`/wiki/v/${encodeURIComponent(title)}/edit`, { state: { allowEdit: true } })
               }
               disabled={!isLoggedIn}
             >

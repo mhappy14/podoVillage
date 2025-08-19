@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
-import { Box, Button, TextField, FormControl, Select, InputLabel, MenuItem, Typography } from '@mui/material';
+import { Form, Select, Input, Button, Typography, message } from 'antd';
 import AxiosInstance from './AxiosInstance';
+
+const { Option } = Select;
+const { Text } = Typography;
 
 const StudyWriteDetailsubject = ({ examList, mainsubjectList, onDetailsubjectAdd }) => {
   const [selectedExam, setSelectedExam] = useState('');
   const [selectedMainsubject, setSelectedMainsubject] = useState('');
   const [detailnumber, setDetailnumber] = useState('');
   const [detailtitle, setDetailtitle] = useState('');
-  const [detailSubjectMessage, setDetailSubjectMessage] = useState('');
-  const [detailSubjectError, setDetailSubjectError] = useState('');
   const [isDetailnumberDuplicate, setIsDetailnumberDuplicate] = useState(false);
   const [filteredMainsubjects, setFilteredMainsubjects] = useState(mainsubjectList);
 
@@ -24,20 +25,15 @@ const StudyWriteDetailsubject = ({ examList, mainsubjectList, onDetailsubjectAdd
       const response = await AxiosInstance.get(`detailsubject/check_detailnumber/`, {
         params: { mainslug: selectedMainsubject, detailnumber: value },
       });
-
       setIsDetailnumberDuplicate(response.data.exists);
     } catch (error) {
       console.error('Error checking detailnumber:', error);
     }
   };
 
-  const handleDetailSubjectSubmit = async (e) => {
-    e.preventDefault();
-    setDetailSubjectMessage('');
-    setDetailSubjectError('');
-
+  const handleSubmit = async () => {
     if (!selectedExam || !selectedMainsubject || !detailnumber || !detailtitle) {
-      setDetailSubjectError('모든 필드를 입력해 주세요.');
+      message.error('모든 필드를 입력해 주세요.');
       return;
     }
 
@@ -45,112 +41,108 @@ const StudyWriteDetailsubject = ({ examList, mainsubjectList, onDetailsubjectAdd
       const response = await AxiosInstance.post('detailsubject/', {
         exam: selectedExam,
         mainslug: selectedMainsubject,
-        detailnumber: detailnumber,
-        detailtitle: detailtitle,
+        detailnumber,
+        detailtitle,
       });
       onDetailsubjectAdd(response.data);
-      setDetailSubjectMessage('세부과목이 성공적으로 등록되었습니다.');
+      message.success('세부과목이 성공적으로 등록되었습니다.');
       setSelectedExam('');
       setSelectedMainsubject('');
       setDetailnumber('');
       setDetailtitle('');
+      setIsDetailnumberDuplicate(false);
     } catch (err) {
-      setDetailSubjectError(`오류: ${err.response?.data?.message || err.message}`);
+      message.error(`오류: ${err.response?.data?.message || err.message}`);
     }
   };
 
-  const handleExamChange = (e) => {
-    const selectedExamId = e.target.value;
-    setSelectedExam(selectedExamId);
+  const handleExamChange = (value) => {
+    setSelectedExam(value);
     setSelectedMainsubject('');
-    setFilteredMainsubjects(
-      mainsubjectList.filter((mainSubject) => mainSubject.exam?.id === parseInt(selectedExamId))
-    );
+    const filtered = mainsubjectList.filter((main) => main.exam?.id === value);
+    setFilteredMainsubjects(filtered);
   };
 
-  // 공통 정렬 함수
-  const sortByKey = (array, key, referenceArray = null, ascending = true) => {
-    return array.slice().sort((a, b) => {
-      const valueA = referenceArray
-        ? referenceArray.find((item) => item.id === a)?.[key]
-        : a[key];
-      const valueB = referenceArray
-        ? referenceArray.find((item) => item.id === b)?.[key]
-        : b[key];
-  
-      if (!valueA || !valueB) return 0; // 값이 없을 경우
-  
-      const comparison = valueA.localeCompare(valueB); // 기본 비교 (오름차순)
-  
-      return ascending ? comparison : -comparison; // ascending에 따라 방향 결정
-    });
-  };
+  const sortByKey = (array, key) =>
+    array.slice().sort((a, b) => (a[key] || '').localeCompare(b[key] || ''));
 
   return (
-    <Box sx={{ margin: '0 1rem 0 0' }}>
-      <Typography variant="h6">세부과목 등록</Typography>
-      <form onSubmit={handleDetailSubjectSubmit}>
-        <FormControl fullWidth margin="normal">
-          <InputLabel>시험명</InputLabel>
-          <Select value={selectedExam} onChange={handleExamChange}>
+    <div>
+      <Typography.Title level={5}>세부과목 등록</Typography.Title>
+      <Form layout="vertical" onFinish={handleSubmit}>
+        <Form.Item label="시험명" required>
+          <Select
+            placeholder="시험명을 선택하세요"
+            value={selectedExam}
+            onChange={handleExamChange}
+          >
             {sortByKey(examList, 'examname').map((exam) => (
-              <MenuItem key={exam.id} value={exam.id}>
+              <Option key={exam.id} value={exam.id}>
                 {exam.examname}
-              </MenuItem>
+              </Option>
             ))}
           </Select>
-        </FormControl>
-        <FormControl fullWidth margin="normal" disabled={!selectedExam}>
-          <InputLabel>{selectedExam ? '주요과목' : '주요과목(시험명을 먼저 선택해주세요).'}</InputLabel>
-          <Select value={selectedMainsubject} onChange={(e) => setSelectedMainsubject(e.target.value)}>
-            {sortByKey(filteredMainsubjects, 'mainslug').map((mainSubject) => (
-              <MenuItem key={mainSubject.id} value={mainSubject.id}>
-                {mainSubject.mainslug}
-              </MenuItem>
+        </Form.Item>
+
+        <Form.Item label="주요과목" required>
+          <Select
+            placeholder={selectedExam ? '주요과목 선택' : '시험명을 먼저 선택해주세요'}
+            value={selectedMainsubject}
+            onChange={setSelectedMainsubject}
+            disabled={!selectedExam}
+          >
+            {sortByKey(filteredMainsubjects, 'mainslug').map((main) => (
+              <Option key={main.id} value={main.id}>
+                {main.mainslug}
+              </Option>
             ))}
           </Select>
-        </FormControl>
-        <TextField
-          label={selectedMainsubject ? '세부과목번호(자연수만 입력 가능)' : '세부과목번호(주요과목을 먼저 선택해주세요).'}
-          variant="outlined"
-          value={detailnumber}
-          onChange={(e) => {
-            const value = e.target.value;
-            if (/^[1-9]\d*$/.test(value) || value === '') {
-              handleDetailnumberChange(value);
+        </Form.Item>
+
+        <Form.Item label="세부과목번호" required>
+          <Input
+            placeholder={
+              selectedMainsubject
+                ? '세부과목번호(자연수만 입력 가능)'
+                : '주요과목을 먼저 선택해주세요'
             }
-          }}
-          fullWidth
-          margin="normal"
-          disabled={!selectedMainsubject}
-        />
-        {isDetailnumberDuplicate && (
-          <Typography color="red" variant="body2">
-            이미 등록된 세부과목입니다.
-          </Typography>
-        )}
-        <TextField
-          label={selectedMainsubject ? '세부과목(이미 등록된 경우, 입력 불가)' : '세부과목(주요과목을 먼저 선택해주세요).'}
-          variant="outlined"
-          value={detailtitle}
-          onChange={(e) => setDetailtitle(e.target.value)}
-          fullWidth
-          margin="normal"
-          disabled={!selectedMainsubject || isDetailnumberDuplicate}
-        />
-        <Button
-          type="submit"
-          variant="contained"
-          color="primary"
-          fullWidth
-          disabled={isDetailnumberDuplicate || !detailtitle}
-        >
-          등록
-        </Button>
-        {detailSubjectMessage && <Typography color="green">{detailSubjectMessage}</Typography>}
-        {detailSubjectError && <Typography color="red">{detailSubjectError}</Typography>}
-      </form>
-    </Box>
+            value={detailnumber}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (/^[1-9]\d*$/.test(value) || value === '') {
+                handleDetailnumberChange(value);
+              }
+            }}
+            disabled={!selectedMainsubject}
+          />
+          {isDetailnumberDuplicate && <Text type="danger">이미 등록된 세부과목입니다.</Text>}
+        </Form.Item>
+
+        <Form.Item label="세부과목 이름" required>
+          <Input
+            placeholder={
+              selectedMainsubject && !isDetailnumberDuplicate
+                ? '세부과목 이름 입력'
+                : '세부과목번호를 먼저 선택해주세요'
+            }
+            value={detailtitle}
+            onChange={(e) => setDetailtitle(e.target.value)}
+            disabled={!selectedMainsubject || isDetailnumberDuplicate}
+          />
+        </Form.Item>
+
+        <Form.Item>
+          <Button
+            type="primary"
+            htmlType="submit"
+            block
+            disabled={isDetailnumberDuplicate || !detailtitle}
+          >
+            등록
+          </Button>
+        </Form.Item>
+      </Form>
+    </div>
   );
 };
 

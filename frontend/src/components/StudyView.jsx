@@ -1,15 +1,17 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Box, Button, Stack, Pagination, Typography } from '@mui/material';
-import { Link, useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import AxiosInstance from './AxiosInstance';
 import Comments from './Comments';
 import DOMPurify from 'dompurify';
+import { Card, Row, Col, Typography, Button, Pagination, Spin, message } from 'antd';
+
+const { Title, Text } = Typography;
 
 const StudyView = () => {
-  const { id } = useParams(); // URL의 id 파라미터
+  const { id } = useParams();
   const navigate = useNavigate();
   const [selectedExplanation, setSelectedExplanation] = useState(null);
-  const [explanations, setExplanations] = useState([]);
+  const [explanations, setExplanations] = useState({ results: [] });
   const [comments, setComments] = useState([]);
   const [comment, setComment] = useState('');
   const [loggedIn, setLoggedIn] = useState(false);
@@ -20,31 +22,29 @@ const StudyView = () => {
   const itemsPerPage = 10;
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const explanationArray = explanations.results || [];
   const totalPages = Math.ceil(explanations.length / itemsPerPage);
 
+
   const paginatedExplanations = useMemo(() => {
-    return explanations.slice(indexOfFirstItem, indexOfLastItem);
-  }, [explanations, indexOfFirstItem, indexOfLastItem]);
+    return explanationArray.slice(indexOfFirstItem, indexOfLastItem);
+  }, [explanationArray, indexOfFirstItem, indexOfLastItem]);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // 전체 설명 데이터 가져오기
         const explanationRes = await AxiosInstance.get('explanation/');
         setExplanations(explanationRes.data);
 
-        // 선택된 설명 및 댓글 가져오기
         const selectedExplanationRes = await AxiosInstance.get(`explanation/${id}/`);
         setSelectedExplanation(selectedExplanationRes.data);
 
-        // 서버에서 explanation ID를 기준으로 필터링된 댓글 가져오기
-        const commentRes = await AxiosInstance.get('comment/'); // 전체 댓글 가져오기
-        const filteredComments = commentRes.data.filter(
-          (comment) => comment.explanation?.id === parseInt(id) // Paper.id와 URL의 id 비교
+        const commentRes = await AxiosInstance.get('comment/');
+        const filteredComments = (commentRes.data.results || commentRes.data).filter(
+          (c) => c.explanation?.id === parseInt(id)
         );
         setComments(filteredComments);
 
-        // 사용자 정보 가져오기
         const token = localStorage.getItem('Token');
         if (token) {
           const userRes = await AxiosInstance.get('users/me/', {
@@ -67,24 +67,15 @@ const StudyView = () => {
     navigate(`/study/view/${item.id}`);
   };
 
-  const handlePageChange = (event, value) => {
-    setCurrentPage(value);
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
   };
 
-  const handleCommentChange = (e) => {
-    setComment(e.target.value);
-  };
+  const handleCommentChange = (e) => setComment(e.target.value);
 
   const handleCommentSubmit = async () => {
-    if (!loggedIn) {
-      alert('로그인이 필요합니다.');
-      return;
-    }
-
-    if (!comment.trim()) {
-      alert('댓글 내용을 입력하세요.');
-      return;
-    }
+    if (!loggedIn) return message.warning('로그인이 필요합니다.');
+    if (!comment.trim()) return message.warning('댓글 내용을 입력하세요.');
 
     try {
       const res = await AxiosInstance.post('comment/', { content: comment, explanation: selectedExplanation.id });
@@ -92,229 +83,169 @@ const StudyView = () => {
       setComments((prev) => [...prev, res.data]);
     } catch (error) {
       console.error('Error posting comment:', error);
-      alert('댓글 작성 실패');
+      message.error('댓글 작성 실패');
     }
   };
 
   const handleEditClick = () => {
-    navigate(`/study/edit/${id}`, { state: { selectedExplanation } }); // 선택된 데이터를 전달
+    navigate(`/study/edit/${id}`, { state: { selectedExplanation } });
   };
-  
+
   return (
-    <div>
-      {/* 글 상세 내용 */}
-      {selectedExplanation ? (
-        <Box sx={{ p: 2, m: 2, boxShadow: 3 }}>
-          <Box sx={{ display: 'flex', flexDirection: 'row' }}> {/* 타이틀, 작성자 */}
-            <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center' }}>
-              <h3 style={{ padding: 0, margin: 0, display: 'inline-block', whiteSpace: 'nowrap' }}>
-                Q {selectedExplanation.question.questionnumber1}-{selectedExplanation.question.questionnumber2}. {selectedExplanation.question.questiontext}
-              </h3>
+    <div style={{ padding: 20 }}>
+      {loading ? (
+        <Spin tip="Loading..." />
+      ) : selectedExplanation ? (
+        <>
+          {/* 글 상세 내용 */}
+          <Card style={{ marginBottom: 24 }}>
+            <Row justify="space-between" align="middle">
+              <Col flex="auto">
+                <Title level={4} style={{ margin: 0 }}>
+                  Q {selectedExplanation.question.questionnumber1}-{selectedExplanation.question.questionnumber2}. {selectedExplanation.question.questiontext}
+                </Title>
+              </Col>
+              <Col style={{ textAlign: 'right' }}>
+                <Text strong>{selectedExplanation.exam.examname}</Text> <br />
+                <Text>{selectedExplanation.examnumber.examnumber}회 ({selectedExplanation.examnumber.year})</Text> <br />
+                <Text>작성자: {selectedExplanation.nickname?.nickname || 'null'}</Text>
+              </Col>
+            </Row>
+
+            <div style={{ marginTop: 16 }}>
+              <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedExplanation.explanation) }} />
             </div>
-            <div style={{ width: '200px' }}>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', padding: 0, margin: 0, lineHeight: '1.2' }}>
-                <h5 style={{ margin: 0, display: 'inline-block', whiteSpace: 'nowrap' }}>{selectedExplanation.exam.examname}</h5>
-                <h5 style={{ margin: 0, display: 'inline-block', whiteSpace: 'nowrap' }}>
-                  {selectedExplanation.examnumber.examnumber}회 ({selectedExplanation.examnumber.year})
-                </h5>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', padding: 0, margin: '0.3rem 0 0 0', lineHeight: '1.2' }}>
-                <h5 style={{ margin: 0, display: 'inline-block', whiteSpace: 'nowrap' }}>
-                  작성자 {selectedExplanation.nickname ? selectedExplanation.nickname.nickname : "null"}
-                </h5>
-              </div>
+
+            <div style={{ marginTop: 16 }}>
+              <Text>주요과목: {selectedExplanation.mainsubject.map((s) => s.mainslug).join(', ')}</Text>
+              <br />
+              <Text>세부과목: {selectedExplanation.detailsubject.map((s) => s.detailslug).join(', ')}</Text>
             </div>
-          </Box>
 
-          {/* 본문 */}
-          <Typography
-            variant="body1"
-            sx={{ marginTop: '1rem', marginBottom: '1rem' }}
-            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedExplanation.explanation) }}
-          />
+            <Row gutter={16} style={{ marginTop: 16 }}>
+              {user && selectedExplanation.nickname && user.id === selectedExplanation.nickname.id && (
+                <Col>
+                  <Button type="primary" danger onClick={handleEditClick}>수정</Button>
+                </Col>
+              )}
 
-          {/* 해당과목 */}
-          <Typography>
-            주요과목: {selectedExplanation.mainsubject.map((subject) => subject.mainslug).join(', ')}
-            <br />
-            세부과목: {selectedExplanation.detailsubject.map((subject) => subject.detailslug).join(', ')}
-          </Typography>
+              <Col>
+                {selectedExplanation.is_liked ? (
+                  <Button type="default" onClick={async () => {
+                    if (!loggedIn) return message.warning('로그인이 필요합니다.');
+                    try {
+                      await AxiosInstance.delete(`explanation/${selectedExplanation.id}/unlike/`);
+                      setSelectedExplanation(prev => ({
+                        ...prev,
+                        like_count: prev.like_count - 1,
+                        is_liked: false
+                      }));
+                    } catch (error) {
+                      message.error('좋아요 취소 실패');
+                    }
+                  }}>
+                    좋아요 취소 {selectedExplanation.like_count}
+                  </Button>
+                ) : (
+                  <Button type="primary" onClick={async () => {
+                    if (!loggedIn) return message.warning('로그인이 필요합니다.');
+                    try {
+                      await AxiosInstance.post(`explanation/${selectedExplanation.id}/like/`);
+                      setSelectedExplanation(prev => ({
+                        ...prev,
+                        like_count: prev.like_count + 1,
+                        is_liked: true
+                      }));
+                    } catch (error) {
+                      message.error('좋아요 실패');
+                    }
+                  }}>
+                    좋아요 {selectedExplanation.like_count}
+                  </Button>
+                )}
+              </Col>
 
-          <Box sx={{display: 'flex', justifyContent: 'center', alignItems: 'center'}}> 
-            {/* 수정 */}
-            {user && selectedExplanation.nickname && user.id === selectedExplanation.nickname.id && (
-              <Button variant="contained" color="warning" onClick={handleEditClick}>
-                수정
-              </Button>
-            )}
+              <Col>
+                {selectedExplanation.is_bookmarked ? (
+                  <Button type="default" onClick={async () => {
+                    if (!loggedIn) return message.warning('로그인이 필요합니다.');
+                    try {
+                      await AxiosInstance.delete(`explanation/${selectedExplanation.id}/unbookmark/`);
+                      setSelectedExplanation(prev => ({
+                        ...prev,
+                        bookmark_count: prev.bookmark_count - 1,
+                        is_bookmarked: false
+                      }));
+                    } catch (error) {
+                      message.error('북마크 취소 실패');
+                    }
+                  }}>
+                    북마크 취소 {selectedExplanation.bookmark_count}
+                  </Button>
+                ) : (
+                  <Button type="primary" onClick={async () => {
+                    if (!loggedIn) return message.warning('로그인이 필요합니다.');
+                    try {
+                      await AxiosInstance.post(`explanation/${selectedExplanation.id}/bookmark/`);
+                      setSelectedExplanation(prev => ({
+                        ...prev,
+                        bookmark_count: prev.bookmark_count + 1,
+                        is_bookmarked: true
+                      }));
+                    } catch (error) {
+                      message.error('북마크 실패');
+                    }
+                  }}>
+                    북마크 {selectedExplanation.bookmark_count}
+                  </Button>
+                )}
+              </Col>
+            </Row>
 
-            {/* 좋아요 */}
-            {selectedExplanation.is_liked ? (
-              <Button
-                variant="contained"
-                color="secondary"
-                sx={{ marginLeft: '1rem' }}
-                onClick={async () => {
-                  if (!loggedIn) {
-                    alert('로그인이 필요합니다.');
-                    return;
-                  }
-                  try {
-                    await AxiosInstance.delete(`explanation/${selectedExplanation.id}/unlike/`);
-                    // 좋아요 상태를 업데이트합니다.
-                    setSelectedExplanation((prev) => ({
-                      ...prev,
-                      like_count: prev.like_count - 1,
-                      is_liked: false, // 좋아요 상태 업데이트
-                    }));
-                  } catch (error) {
-                    console.error('좋아요 취소 처리 중 오류:', error);
-                    alert('좋아요 취소 처리에 실패했습니다.');
-                  }
-                }}
-              >
-                좋아요 취소 {selectedExplanation.like_count}
-              </Button>
-            ) : (
-              <Button
-                variant="contained"
-                color="primary"
-                sx={{ marginLeft: '1rem' }}
-                onClick={async () => {
-                  if (!loggedIn) {
-                    alert('로그인이 필요합니다.');
-                    return;
-                  }
-                  try {
-                    await AxiosInstance.post(`explanation/${selectedExplanation.id}/like/`);
-                    // 좋아요 상태를 업데이트합니다.
-                    setSelectedExplanation((prev) => ({
-                      ...prev,
-                      like_count: prev.like_count + 1,
-                      is_liked: true, // 좋아요 상태 업데이트
-                    }));
-                  } catch (error) {
-                    console.error('좋아요 처리 중 오류:', error);
-                    alert('좋아요 처리에 실패했습니다.');
-                  }
-                }}
-              >
-                좋아요 {selectedExplanation.like_count}
-              </Button>
-            )}
+            {/* 댓글 */}
+            <Comments
+              filteredComments={comments}
+              comment={comment}
+              loggedIn={loggedIn}
+              handleCommentChange={handleCommentChange}
+              handleCommentSubmit={handleCommentSubmit}
+            />
+          </Card>
 
-            {/* 북마크 버튼 */}
-            {selectedExplanation.is_bookmarked ? (
-              <Button
-                variant="contained"
-                color="secondary"
-                sx={{ marginLeft: '1rem' }}
-                onClick={async () => {
-                  if (!loggedIn) {
-                    alert('로그인이 필요합니다.');
-                    return;
-                  }
-                  try {
-                    await AxiosInstance.delete(`explanation/${selectedExplanation.id}/unbookmark/`);
-                    setSelectedExplanation((prev) => ({
-                      ...prev,
-                      bookmark_count: prev.bookmark_count - 1,
-                      is_bookmarked: false,
-                    }));
-                  } catch (error) {
-                    console.error('북마크 취소 처리 중 오류:', error);
-                    alert('북마크 취소 처리에 실패했습니다.');
-                  }
-                }}
-              >
-                북마크 취소 {selectedExplanation.bookmark_count}
-              </Button>
-            ) : (
-              <Button
-                variant="contained"
-                color="primary"
-                sx={{ marginLeft: '1rem' }}
-                onClick={async () => {
-                  if (!loggedIn) {
-                    alert('로그인이 필요합니다.');
-                    return;
-                  }
-                  try {
-                    await AxiosInstance.post(`explanation/${selectedExplanation.id}/bookmark/`);
-                    setSelectedExplanation((prev) => ({
-                      ...prev,
-                      bookmark_count: prev.bookmark_count + 1,
-                      is_bookmarked: true,
-                    }));
-                  } catch (error) {
-                    console.error('북마크 처리 중 오류:', error);
-                    alert('북마크 처리에 실패했습니다.');
-                  }
-                }}
-              >
-                북마크 {selectedExplanation.bookmark_count}
-              </Button>
-            )}
-          </Box>
-
-          {/* 댓글 */}
-          <Comments
-            filteredComments={comments}
-            comment={comment}
-            loggedIn={loggedIn}
-            handleCommentChange={handleCommentChange}
-            handleCommentSubmit={handleCommentSubmit}
-          />
-        </Box>
-      ) : (
-        <Typography>Loading explanation...</Typography>
-      )}
-
-      {/* 글 목록 */}
-      <div>
-        {loading ? (
-          <p>Loading data...</p>
-        ) : (
-          <div style={{ margin: '3rem 0 0 0' }}>
-            {paginatedExplanations.map((item) => (
-              <Box
+          {/* 글 목록 */}
+          <div style={{ marginTop: 24 }}>
+            {paginatedExplanations.map(item => (
+              <Card
                 key={item.id}
-                sx={{
-                  p: 2,
-                  m: 2,
-                  boxShadow: 3,
-                  cursor: 'pointer',
-                  backgroundColor: selectedExplanation?.id === item.id ? '#F0F8FF' : 'white',
-                  color: selectedExplanation?.id === item.id ? '#5F9EA0' : 'black',
+                hoverable
+                style={{
+                  marginBottom: 16,
+                  backgroundColor: selectedExplanation?.id === item.id ? '#F0F8FF' : 'white'
                 }}
                 onClick={() => handleBoxClick(item)}
               >
-                <div>
-                  <strong>{item.exam.examname}</strong> {item.examnumber.year}년 {item.examnumber.examnumber}회 Q
-                  {item.question.questionnumber1}-{item.question.questionnumber2}. {item.question.questiontext}
-                  <br />
-                  좋아요: {item.like.length}개
-                </div>
-              </Box>
+                <Text strong>{item.exam.examname}</Text> {item.examnumber.year}년 {item.examnumber.examnumber}회 Q
+                {item.question.questionnumber1}-{item.question.questionnumber2}. {item.question.questiontext}
+                <br />
+                <Text>좋아요: {item.like.length}개</Text>
+              </Card>
             ))}
           </div>
-        )}
-      </div>
 
-      {/* Pagination 및 Write 버튼 */}
-      <div style={{ display: 'flex', marginLeft: '2rem', marginRight: '2rem', marginTop: '2rem' }}>
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}></div>
-        <div style={{ flex: 2, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-          <Stack spacing={2}>
-            <Pagination count={totalPages} page={currentPage} onChange={handlePageChange} />
-          </Stack>
-        </div>
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-          <Button component={Link} to="/study/write" variant="contained">
-            Write
-          </Button>
-        </div>
-      </div>
+          {/* Pagination 및 Write 버튼 */}
+          <Row justify="space-between" align="middle" style={{ marginTop: 24 }}>
+            <Col flex="auto" />
+            <Col>
+              <Pagination current={currentPage} total={explanations.length} pageSize={itemsPerPage} onChange={handlePageChange} />
+            </Col>
+            <Col>
+              <Button type="primary" as={Link} to="/study/write">Write</Button>
+            </Col>
+          </Row>
+        </>
+      ) : (
+        <Spin tip="Loading..." />
+      )}
     </div>
   );
 };

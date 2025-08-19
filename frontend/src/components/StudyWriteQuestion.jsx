@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
-import { Box, Button, TextField, FormControl, Select, InputLabel, MenuItem, Typography } from '@mui/material';
+import React, { useState, useEffect } from 'react';
+import { Form, Select, Input, Button, Typography, message } from 'antd';
 import AxiosInstance from './AxiosInstance';
+
+const { Option } = Select;
+const { Text } = Typography;
 
 const StudyWriteQuestion = ({ examList, examNumberList, onQuestionAdd }) => {
   const [selectedExam, setSelectedExam] = useState('');
@@ -8,16 +11,26 @@ const StudyWriteQuestion = ({ examList, examNumberList, onQuestionAdd }) => {
   const [questionNumber1, setQuestionNumber1] = useState('');
   const [questionNumber2, setQuestionNumber2] = useState('');
   const [questionText, setQuestionText] = useState('');
-  const [questionMessage, setQuestionMessage] = useState('');
-  const [questionError, setQuestionError] = useState('');
-  const [isDuplicate, setIsDuplicate] = useState(false); // 중복 여부 상태
-  const [filteredExamNumbers, setFilteredExamNumbers] = useState(examNumberList);
+  const [isDuplicate, setIsDuplicate] = useState(false);
+  const [filteredExamNumbers, setFilteredExamNumbers] = useState([]);
+
+  useEffect(() => {
+    const filteredNumbers = examNumberList.filter(
+      (examNumber) => examNumber.exam?.id === parseInt(selectedExam)
+    );
+    setFilteredExamNumbers(filteredNumbers);
+    setSelectedExamNumber('');
+  }, [selectedExam, examNumberList]);
 
   const handleQuestionNumberChange = async (key, value) => {
+    // 상태 업데이트
     if (key === 'questionNumber1') setQuestionNumber1(value);
     if (key === 'questionNumber2') setQuestionNumber2(value);
 
-    if (!selectedExam || !selectedExamNumber || !value) {
+    // 값이 없으면 중단
+    const q1 = key === 'questionNumber1' ? value : questionNumber1;
+    const q2 = key === 'questionNumber2' ? value : questionNumber2;
+    if (!selectedExam || !selectedExamNumber || !q1 || !q2) {
       setIsDuplicate(false);
       return;
     }
@@ -26,25 +39,22 @@ const StudyWriteQuestion = ({ examList, examNumberList, onQuestionAdd }) => {
       const response = await AxiosInstance.get('question/check_question/', {
         params: {
           exam: selectedExam,
-          examnumber: selectedExamNumber,
-          questionnumber1: key === 'questionNumber1' ? value : questionNumber1,
-          questionnumber2: key === 'questionNumber2' ? value : questionNumber2,
+          examnumber: selectedExamNumber, // key 이름을 Django와 일치
+          questionnumber1: q1,
+          questionnumber2: q2,
         },
       });
 
       setIsDuplicate(response.data.exists);
     } catch (error) {
       console.error('Error checking question:', error);
+      setIsDuplicate(false);
     }
   };
 
-  const handleQuestionSubmit = async (e) => {
-    e.preventDefault();
-    setQuestionMessage('');
-    setQuestionError('');
-
+  const handleQuestionSubmit = async () => {
     if (!selectedExam || !selectedExamNumber || !questionNumber1 || !questionNumber2 || !questionText) {
-      setQuestionError('모든 필드를 입력해 주세요.');
+      message.error('모든 필드를 입력해 주세요.');
       return;
     }
 
@@ -52,105 +62,97 @@ const StudyWriteQuestion = ({ examList, examNumberList, onQuestionAdd }) => {
       const response = await AxiosInstance.post('question/', {
         exam: selectedExam,
         examnumber: selectedExamNumber,
-        questionnumber1: questionNumber1,
+        questionnumber1: questionNumber1, // state에서 가져오기
         questionnumber2: questionNumber2,
         questiontext: questionText,
       });
+
       onQuestionAdd(response.data);
-      setQuestionMessage('질문이 성공적으로 등록되었습니다.');
+      message.success('질문이 성공적으로 등록되었습니다.');
       setSelectedExam('');
       setSelectedExamNumber('');
       setQuestionNumber1('');
       setQuestionNumber2('');
       setQuestionText('');
+      setIsDuplicate(false);
     } catch (err) {
-      setQuestionError(`오류: ${err.response?.data?.message || err.message}`);
+      message.error(`오류: ${err.response?.data?.message || err.message}`);
     }
   };
 
-  const handleExamChange = (e) => {
-    const selectedExamId = e.target.value;
-    setSelectedExam(selectedExamId);
-    setSelectedExamNumber('');
-    const filteredNumbers = examNumberList.filter(
-      (examNumber) => examNumber.exam?.id === parseInt(selectedExamId)
-    );
-    setFilteredExamNumbers(filteredNumbers);
-  };
-
   return (
-    <Box sx={{ margin: '0 1rem 0 0' }}>
-      <Typography variant="h6">Question</Typography>
-      <form onSubmit={handleQuestionSubmit}>
-        <FormControl fullWidth margin="normal">
-          <InputLabel>시험명</InputLabel>
-          <Select value={selectedExam} onChange={handleExamChange}>
+    <div style={{ maxWidth: 600 }}>
+      <Typography.Title level={5}>Question</Typography.Title>
+      <Form layout="vertical" onFinish={handleQuestionSubmit}>
+        <Form.Item label="시험명" required>
+          <Select
+            value={selectedExam}
+            onChange={setSelectedExam}
+            placeholder="시험명을 선택하세요"
+          >
             {examList.map((exam) => (
-              <MenuItem key={exam.id} value={exam.id}>
+              <Option key={exam.id} value={exam.id}>
                 {exam.examname}
-              </MenuItem>
+              </Option>
             ))}
           </Select>
-        </FormControl>
-        <FormControl fullWidth margin="normal" disabled={!selectedExam}>
-          <InputLabel>{selectedExam ? '시험회차' : '시험명을 먼저 선택해주세요.'}</InputLabel>
-          <Select value={selectedExamNumber} onChange={(e) => setSelectedExamNumber(e.target.value)}>
+        </Form.Item>
+
+        <Form.Item label="시험회차" required>
+          <Select
+            value={selectedExamNumber}
+            onChange={setSelectedExamNumber}
+            placeholder={selectedExam ? "시험회차 선택" : "시험명을 먼저 선택해주세요."}
+            disabled={!selectedExam}
+          >
             {filteredExamNumbers.map((examNumber) => (
-              <MenuItem key={examNumber.id} value={examNumber.id}>
+              <Option key={examNumber.id} value={examNumber.id}>
                 {examNumber.slug}
-              </MenuItem>
+              </Option>
             ))}
           </Select>
-        </FormControl>
-        <Box sx={{ display: 'flex' }}>
-          <TextField
-            sx={{ width: '50%', margin: '1rem 0.5rem 1rem 0' }}
-            label="과목 번호"
-            variant="outlined"
-            value={questionNumber1}
-            onChange={(e) => handleQuestionNumberChange('questionNumber1', e.target.value)}
-            fullWidth
-            margin="normal"
-            disabled={!selectedExamNumber}
+        </Form.Item>
+
+        <Form.Item label="과목 번호 / 문항 번호" required>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Input
+              placeholder="과목 번호"
+              value={questionNumber1}
+              onChange={(e) => handleQuestionNumberChange('questionNumber1', e.target.value)}
+              disabled={!selectedExamNumber}
+            />
+            <Input
+              placeholder="문항 번호"
+              value={questionNumber2}
+              onChange={(e) => handleQuestionNumberChange('questionNumber2', e.target.value)}
+              disabled={!questionNumber1}
+            />
+          </div>
+          {isDuplicate && <Text type="danger">이미 등록된 문항입니다.</Text>}
+        </Form.Item>
+
+        <Form.Item label="문항 내용" required>
+          <Input.TextArea
+            placeholder="문항 내용을 입력하세요 (핵심만)"
+            value={questionText}
+            onChange={(e) => setQuestionText(e.target.value)}
+            rows={4}
+            disabled={!questionNumber2 || isDuplicate}
           />
-          <TextField
-            sx={{ width: '50%', margin: '1rem 0 1rem 0.5rem' }}
-            label="문항 번호"
-            variant="outlined"
-            value={questionNumber2}
-            onChange={(e) => handleQuestionNumberChange('questionNumber2', e.target.value)}
-            fullWidth
-            margin="normal"
-            disabled={!questionNumber1}
-          />
-        </Box>
-        {isDuplicate && (
-          <Typography color="red" variant="body2">
-            이미 등록된 문항입니다.
-          </Typography>
-        )}
-        <TextField
-          label="문항 내용(핵심만 입력바랍니다)"
-          variant="outlined"
-          value={questionText}
-          onChange={(e) => setQuestionText(e.target.value)}
-          fullWidth
-          margin="normal"
-          disabled={!questionNumber2 || isDuplicate}
-        />
-        <Button
-          type="submit"
-          variant="contained"
-          color="primary"
-          fullWidth
-          disabled={isDuplicate || !questionText}
-        >
-          등록
-        </Button>
-        {questionMessage && <Typography color="green">{questionMessage}</Typography>}
-        {questionError && <Typography color="red">{questionError}</Typography>}
-      </form>
-    </Box>
+        </Form.Item>
+
+        <Form.Item>
+          <Button
+            type="primary"
+            htmlType="submit"
+            block
+            disabled={isDuplicate || !questionText}
+          >
+            등록
+          </Button>
+        </Form.Item>
+      </Form>
+    </div>
   );
 };
 

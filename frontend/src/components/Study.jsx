@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Box, Button, Stack, Pagination, Typography } from '@mui/material';
+import { Button, Pagination, Typography, Select, Card, Space, Flex } from 'antd';
 import { Link } from 'react-router-dom';
 import AxiosInstance from './AxiosInstance';
-import { Select } from 'antd';
 
-const Study = ({ examList, examNumberList, questionList, mainsubjectList, detailsubjectList }) => {
+const { Text } = Typography;
+
+const Study = () => {
   const [explanations, setExplanations] = useState([]);   // 항상 배열 유지
   const [loading, setLoading] = useState(true);
   const [selectedExam, setSelectedExam] = useState('');
@@ -17,7 +18,6 @@ const Study = ({ examList, examNumberList, questionList, mainsubjectList, detail
       try {
         const res = await AxiosInstance.get('explanation/', { headers: { Authorization: null } });
         const raw = res.data;
-        // ✅ 배열 표준화: 배열이면 그대로, 아니면 results에서 꺼내고, 아니면 빈배열
         const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.results) ? raw.results : []);
         setExplanations(list);
       } catch (error) {
@@ -31,7 +31,7 @@ const Study = ({ examList, examNumberList, questionList, mainsubjectList, detail
 
   // ===== 필터링 =====
   const filteredExplanations = useMemo(() => {
-    if (!Array.isArray(explanations)) return []; // 방어
+    if (!Array.isArray(explanations)) return []; 
     let filtered = explanations;
     if (selectedExam) {
       filtered = filtered.filter((item) => item?.exam?.examname === selectedExam);
@@ -45,22 +45,22 @@ const Study = ({ examList, examNumberList, questionList, mainsubjectList, detail
     return filtered;
   }, [explanations, selectedExam, selectedExamNumber, selectedQuestionNumber]);
 
-  // ===== 정렬 (항상 배열 기반) =====
+  // ===== 정렬 =====
   const sortedExplanations = useMemo(() => {
     const arr = Array.isArray(filteredExplanations) ? filteredExplanations : [];
     return arr.slice().sort((a, b) => new Date(b?.created_at) - new Date(a?.created_at));
   }, [filteredExplanations]);
 
-  // ===== 페이지네이션 (정렬된 결과 기준) =====
+  // ===== 페이지네이션 =====
   const itemsPerPage = 10;
   const totalPages = Math.max(1, Math.ceil(sortedExplanations.length / itemsPerPage));
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const paginatedExplanations = sortedExplanations.slice(indexOfFirstItem, indexOfLastItem);
 
-  const handlePageChange = (_event, value) => setCurrentPage(value);
+  const handlePageChange = (page) => setCurrentPage(page);
 
-  // ===== Select 옵션: null 안전 처리 =====
+  // ===== Select 옵션 =====
   const safe = Array.isArray(explanations) ? explanations : [];
 
   const examOptions = [
@@ -85,12 +85,11 @@ const Study = ({ examList, examNumberList, questionList, mainsubjectList, detail
   ];
 
   return (
-    <div>
-      {/* 필터링 Select 컴포넌트 */}
-      <Box sx={{ display: 'flex', gap: '1rem', m: 1 }}>
-        {/* 시험명 선택 */}
+    <div style={{ padding: '1rem' }}>
+      {/* 필터링 Select */}
+      <Flex gap="middle" style={{ marginBottom: '1rem' }}>
         <div style={{ flex: 1 }}>
-          <label style={{ marginBottom: '0.5rem', display: 'block' }}>시험명</label>
+          <Text strong>시험명</Text>
           <Select
             value={selectedExam}
             onChange={(value) => { setSelectedExam(value); setCurrentPage(1); }}
@@ -100,9 +99,8 @@ const Study = ({ examList, examNumberList, questionList, mainsubjectList, detail
           />
         </div>
 
-        {/* 시험회차 선택 */}
         <div style={{ flex: 1 }}>
-          <label style={{ marginBottom: '0.5rem', display: 'block' }}>시험회차</label>
+          <Text strong>시험회차</Text>
           <Select
             value={selectedExamNumber}
             onChange={(value) => { setSelectedExamNumber(value); setCurrentPage(1); }}
@@ -112,11 +110,8 @@ const Study = ({ examList, examNumberList, questionList, mainsubjectList, detail
           />
         </div>
 
-        {/* 문제번호 선택 */}
         <div style={{ flex: 1 }}>
-          <label style={{ marginBottom: '0.5rem', display: 'block' }}>
-            {selectedExam ? '과목번호' : '(과목번호)시험회차를 먼저 선택해주세요.'}
-          </label>
+          <Text strong>{selectedExam ? '과목번호' : '(과목번호) 시험회차를 먼저 선택해주세요.'}</Text>
           <Select
             value={selectedQuestionNumber}
             onChange={(value) => { setSelectedQuestionNumber(value); setCurrentPage(1); }}
@@ -126,52 +121,41 @@ const Study = ({ examList, examNumberList, questionList, mainsubjectList, detail
             disabled={!selectedExam}
           />
         </div>
-      </Box>
+      </Flex>
 
       {/* Explanation 목록 */}
-      <div>
-        {loading ? (
-          <Typography>Loading data...</Typography>
-        ) : (
-          <div style={{ margin: '1rem 0 0 0' }}>
-            {paginatedExplanations.map((item) => (
-              <Box
-                key={item?.id}
-                sx={{ p: 1, m: 1, boxShadow: 3, cursor: 'pointer', backgroundColor: 'white', color: 'black' }}
-              >
-                <Link to={`/study/view/${item?.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                  <div style={{ display: 'flex' }}>
-                    <div style={{ width: '10%' }}>
-                      <strong>{item?.exam?.examname ?? '-'}</strong>
-                    </div>
-                    <div style={{ width: '15%' }}>
-                      {item?.examnumber?.year ?? '-'}년 {item?.examnumber?.examnumber ?? '-'}회 Q
-                      {item?.question?.questionnumber1 ?? '-'}-{item?.question?.questionnumber2 ?? '-'}.
-                    </div>
-                    <div style={{ width: '65%' }}>{item?.question?.questiontext ?? ''}</div>
-                    <div style={{ width: '10%' }}>좋아요: {item?.like?.length ?? 0}개</div>
+      {loading ? (
+        <Text>Loading data...</Text>
+      ) : (
+        <Space direction="vertical" style={{ width: '100%' }}>
+          {paginatedExplanations.map((item) => (
+            <Link key={item?.id} to={`/study/view/${item?.id}`} style={{ textDecoration: 'none' }}>
+              <Card hoverable>
+                <Flex justify="space-between" align="center">
+                  <div style={{ width: '10%' }}>
+                    <strong>{item?.exam?.examname ?? '-'}</strong>
                   </div>
-                </Link>
-              </Box>
-            ))}
-          </div>
-        )}
-      </div>
+                  <div style={{ width: '15%' }}>
+                    {item?.examnumber?.year ?? '-'}년 {item?.examnumber?.examnumber ?? '-'}회 Q
+                    {item?.question?.questionnumber1 ?? '-'}-{item?.question?.questionnumber2 ?? '-'}.
+                  </div>
+                  <div style={{ width: '65%' }}>{item?.question?.questiontext ?? ''}</div>
+                  <div style={{ width: '10%', textAlign: 'right' }}>좋아요: {item?.like?.length ?? 0}개</div>
+                </Flex>
+              </Card>
+            </Link>
+          ))}
+        </Space>
+      )}
 
-      {/* Pagination 및 Write 버튼 */}
-      <div style={{ display: 'flex', marginLeft: '2rem', marginRight: '2rem', marginTop: '2rem' }}>
-        <div style={{ flex: 1 }} />
-        <div style={{ flex: 2, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-          <Stack spacing={2}>
-            <Pagination count={totalPages} page={currentPage} onChange={handlePageChange} />
-          </Stack>
-        </div>
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-          <Button component={Link} to="/study/write" variant="contained">
-            Write
-          </Button>
-        </div>
-      </div>
+      {/* Pagination + Write 버튼 */}
+      <Flex justify="space-between" align="center" style={{ marginTop: '2rem' }}>
+        <div />
+        <Pagination current={currentPage} total={sortedExplanations.length} pageSize={itemsPerPage} onChange={handlePageChange} />
+        <Button type="primary">
+          <Link to="/study/write" style={{ color: 'white' }}>Write</Link>
+        </Button>
+      </Flex>
     </div>
   );
 };

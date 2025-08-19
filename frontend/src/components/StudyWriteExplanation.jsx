@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { Box, Button, FormControl, Select, InputLabel, MenuItem, Typography, Chip } from '@mui/material';
-import OutlinedInput from '@mui/material/OutlinedInput';
-import Checkbox from '@mui/material/Checkbox';
-import ListItemText from '@mui/material/ListItemText';
+import { Form, Select, Input, Button, Typography, Row, Col, Checkbox, message } from 'antd';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import { useNavigate } from 'react-router-dom';
 import AxiosInstance from './AxiosInstance';
+
+const { Option } = Select;
+const { Text } = Typography;
 
 const StudyWriteExplanation = ({
   examList,
@@ -14,10 +14,9 @@ const StudyWriteExplanation = ({
   questionList,
   mainsubjectList,
   detailsubjectList,
-  selectedExplanation = null, // 선택된 Explanation 데이터
+  selectedExplanation = null,
   onSave,
-  isEdit = false, // 수정 모드인지 여부
-
+  isEdit = false,
 }) => {
   const navigate = useNavigate();
   const [selectedExam, setSelectedExam] = useState(selectedExplanation?.exam?.id || '');
@@ -43,217 +42,186 @@ const StudyWriteExplanation = ({
   };
 
   const formats = ['header', 'bold', 'italic', 'underline', 'list', 'bullet', 'link', 'image'];
-  
-  // 필터링된 데이터 계산
+
+  // 필터링된 데이터
   const filteredExamNumbers = selectedExam
     ? examNumberList.filter((examNumber) => examNumber.exam?.id === selectedExam)
     : examNumberList;
 
   const filteredQuestionList = selectedExamNumber
-    ? questionList.filter((question) => question.examnumber?.id === selectedExamNumber)
+    ? questionList.filter((q) => q.examnumber?.id === selectedExamNumber)
     : questionList;
 
   const filteredMainsubjects = selectedExam
-    ? mainsubjectList.filter((mainsubject) => mainsubject.exam?.id === selectedExam)
+    ? mainsubjectList.filter((ms) => ms.exam?.id === selectedExam)
     : [];
 
-  const filteredDetailsubjects = selectedMainsubjects.length > 0
-    ? detailsubjectList.filter((detailsubject) =>
-        selectedMainsubjects.includes(detailsubject.mainslug?.id)
-      )
-    : detailsubjectList;
+  const filteredDetailsubjects =
+    selectedMainsubjects.length > 0
+      ? detailsubjectList.filter((ds) => selectedMainsubjects.includes(ds.mainslug?.id))
+      : detailsubjectList;
 
-  const handleSave = async (e) => {
-    e.preventDefault();
+  const sortByKey = (array, key, referenceArray = null) =>
+    array
+      .slice()
+      .sort((a, b) => {
+        const valueA = referenceArray ? referenceArray.find((item) => item.id === a)?.[key] : a[key];
+        const valueB = referenceArray ? referenceArray.find((item) => item.id === b)?.[key] : b[key];
+        if (!valueA || !valueB) return 0;
+        return valueA.localeCompare(valueB);
+      });
+
+  const handleSave = async () => {
     setErrorMessage('');
-
-    console.log("Selected Exam:", selectedExam);
-    console.log("Selected Exam Number:", selectedExamNumber);
-    console.log("Selected Question:", selectedQuestion);
-    console.log("Selected Mainsubjects:", selectedMainsubjects);
-    console.log("Selected Detailsubjects:", selectedDetailsubjects);
-    console.log("Explanation Text:", explanationText);
-
-    // 유효성 검사
     if (!selectedExam || !selectedExamNumber || !selectedQuestion || !explanationText) {
-      setErrorMessage('모든 필드를 입력해 주세요.');
+      message.error('모든 필드를 입력해 주세요.');
       return;
     }
 
     const requestData = {
       exam: selectedExam,
       examnumber: selectedExamNumber,
-      mainsubject: selectedMainsubjects, // 배열 형태 유지
-      detailsubject: selectedDetailsubjects, // 배열 형태 유지
       question: selectedQuestion,
+      mainsubject: selectedMainsubjects,
+      detailsubject: selectedDetailsubjects,
       explanation: explanationText,
     };
 
     try {
       if (isEdit && selectedExplanation?.id) {
-        // 수정 모드
         const response = await AxiosInstance.patch(`/explanation/${selectedExplanation.id}/`, requestData);
         if (onSave) onSave(response.data);
-        navigate(`/study/view/${selectedExplanation.id}`); // 수정 후 상세 페이지로 이동
+        navigate(`/study/view/${selectedExplanation.id}`);
       } else {
-        // 새 게시글 작성
         const response = await AxiosInstance.post('/explanation/', requestData);
         if (onSave) onSave(response.data);
-        navigate(`/study/view/${response.data.id}`); // 작성 후 상세 페이지로 이동
+        navigate(`/study/view/${response.data.id}`);
       }
     } catch (err) {
       setErrorMessage(err.response?.data?.message || '저장 중 오류가 발생했습니다.');
     }
   };
 
-  // 공통 정렬 함수
-  const sortByKey = (array, key, referenceArray = null, ascending = true) => {
-    return array.slice().sort((a, b) => {
-      const valueA = referenceArray
-        ? referenceArray.find((item) => item.id === a)?.[key]
-        : a[key];
-      const valueB = referenceArray
-        ? referenceArray.find((item) => item.id === b)?.[key]
-        : b[key];
-  
-      if (!valueA || !valueB) return 0; // 값이 없을 경우
-  
-      const comparison = valueA.localeCompare(valueB); // 기본 비교 (오름차순)
-  
-      return ascending ? comparison : -comparison; // ascending에 따라 방향 결정
-    });
-  };
-  
   return (
-    <Box sx={{ margin: '1rem' }}>
-      <Typography variant="h6">{isEdit ? 'Edit Explanation' : 'Write Explanation'}</Typography>
-      <form onSubmit={handleSave}>
-        <Box style={{ display: 'flex', gap: '1rem' }}>
-          <FormControl fullWidth margin="normal" style={{ width: '20%', margin: '1rem 1rem 1rem 0' }}>
-            <InputLabel>시험명</InputLabel>
-            <Select
-              value={selectedExam}
-              onChange={(e) => {
-                const examId = Number(e.target.value);
-                setSelectedExam(examId);
-                setSelectedExamNumber('');
-                setSelectedQuestion('');
-                setSelectedMainsubjects([]);
-                setSelectedDetailsubjects([]);
-              }}
-            >
-              {examList.map((exam) => (
-                <MenuItem key={exam.id} value={exam.id}>
-                  {exam.examname}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+    <div style={{ margin: '1rem' }}>
+      <Typography.Title level={5}>{isEdit ? 'Edit Explanation' : 'Write Explanation'}</Typography.Title>
+      <Form layout="vertical" onFinish={handleSave}>
+        {/* 시험명, 시험회차, 문항 한 줄 */}
+        <Row gutter={16}>
+          <Col span={8}>
+            <Form.Item label="시험명" required>
+              <Select
+                placeholder="시험명을 선택하세요"
+                value={selectedExam}
+                onChange={(value) => {
+                  setSelectedExam(value);
+                  setSelectedExamNumber('');
+                  setSelectedQuestion('');
+                  setSelectedMainsubjects([]);
+                  setSelectedDetailsubjects([]);
+                }}
+              >
+                {examList.map((exam) => (
+                  <Option key={exam.id} value={exam.id}>{exam.examname}</Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </Col>
 
-          <FormControl fullWidth margin="normal" style={{ width: '40%', margin: '1rem 0 1rem 0' }}>
-            <InputLabel>시험회차</InputLabel>
-            <Select
-              value={selectedExamNumber}
-              onChange={(e) => {
-                setSelectedExamNumber(e.target.value);
-                setSelectedQuestion('');
-              }}
-              disabled={!selectedExam}
-            >
-              {filteredExamNumbers.map((examNumber) => (
-                <MenuItem key={examNumber.id} value={examNumber.id}>
-                  {examNumber.slug}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <Col span={8}>
+            <Form.Item label="시험회차" required>
+              <Select
+                placeholder="시험회차 선택"
+                value={selectedExamNumber}
+                onChange={(value) => {
+                  setSelectedExamNumber(value);
+                  setSelectedQuestion('');
+                }}
+                disabled={!selectedExam}
+              >
+                {filteredExamNumbers.map((examNumber) => (
+                  <Option key={examNumber.id} value={examNumber.id}>{examNumber.slug}</Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </Col>
 
-          <FormControl fullWidth margin="normal" style={{ width: '40%', margin: '1rem 0 1rem 1rem' }}>
-            <InputLabel>문항</InputLabel>
-            <Select
-              value={selectedQuestion}
-              onChange={(e) => setSelectedQuestion(e.target.value)}
-              disabled={!selectedExamNumber}
-            >
-              {filteredQuestionList.map((question) => (
-                <MenuItem key={question.id} value={question.id}>
-                  {question.slug}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Box>
+          <Col span={8}>
+            <Form.Item label="문항" required>
+              <Select
+                placeholder="문항 선택"
+                value={selectedQuestion}
+                onChange={setSelectedQuestion}
+                disabled={!selectedExamNumber}
+              >
+                {filteredQuestionList.map((q) => (
+                  <Option key={q.id} value={q.id}>{q.slug}</Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </Col>
+        </Row>
 
-        <Box style={{ display: 'flex' }}>
-          <FormControl fullWidth margin="normal" style={{ width: '50%', margin: '1rem 0 1rem 0' }} disabled={!selectedExam}>
-            <InputLabel>주요과목</InputLabel>
-            <Select
-              multiple
-              value={selectedMainsubjects}
-              onChange={(e) => setSelectedMainsubjects(e.target.value)}
-              input={<OutlinedInput label="주요과목" />}
-              renderValue={(selected) => (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                  {sortByKey(selected, 'mainslug', mainsubjectList).map((value) => {
-                    const mainsubject = mainsubjectList.find((ms) => ms.id === value);
-                    return <Chip key={value} label={mainsubject ? mainsubject.mainslug : value} />;
-                  })}
-                </Box>
-              )}
-            >
-              {sortByKey(filteredMainsubjects, 'mainslug').map((mainsubject) => (
-                <MenuItem key={mainsubject.id} value={mainsubject.id}>
-                  <Checkbox checked={selectedMainsubjects.includes(mainsubject.id)} />
-                  <ListItemText primary={mainsubject.mainslug} />
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+        {/* 주요과목, 세부과목 한 줄 */}
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item label="주요과목">
+              <Select
+                mode="multiple"
+                placeholder="주요과목 선택"
+                value={selectedMainsubjects}
+                onChange={setSelectedMainsubjects}
+                disabled={!selectedExam}
+                optionLabelProp="label"
+              >
+                {sortByKey(filteredMainsubjects, 'mainslug').map((ms) => (
+                  <Option key={ms.id} value={ms.id} label={ms.mainslug}>
+                    <Checkbox checked={selectedMainsubjects.includes(ms.id)}>{ms.mainslug}</Checkbox>
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </Col>
 
-          <FormControl fullWidth margin="normal" style={{ width: '50%', margin: '1rem 0 1rem 1rem' }}>
-            <InputLabel>세부과목</InputLabel>
-            <Select
-              multiple
-              value={selectedDetailsubjects}
-              onChange={(e) => setSelectedDetailsubjects(e.target.value)}
-              input={<OutlinedInput label="세부과목" />}
-              renderValue={(selected) => (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                  {sortByKey(selected, 'detailslug', detailsubjectList).map((value) => {
-                    const detailsubject = detailsubjectList.find((ds) => ds.id === value);
-                    return <Chip key={value} label={detailsubject ? detailsubject.detailslug : value} />;
-                  })}
-                </Box>
-              )}
-            >
-              {sortByKey(filteredDetailsubjects, 'detailslug').map((detailsubject) => (
-                <MenuItem key={detailsubject.id} value={detailsubject.id}>
-                  <Checkbox checked={selectedDetailsubjects.includes(detailsubject.id)} />
-                  <ListItemText primary={detailsubject.detailslug} />
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Box>
+          <Col span={12}>
+            <Form.Item label="세부과목">
+              <Select
+                mode="multiple"
+                placeholder="세부과목 선택"
+                value={selectedDetailsubjects}
+                onChange={setSelectedDetailsubjects}
+                optionLabelProp="label"
+              >
+                {sortByKey(filteredDetailsubjects, 'detailslug').map((ds) => (
+                  <Option key={ds.id} value={ds.id} label={ds.detailslug}>
+                    <Checkbox checked={selectedDetailsubjects.includes(ds.id)}>{ds.detailslug}</Checkbox>
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </Col>
+        </Row>
 
-        <Box sx={{ marginTop: '1rem', marginBottom: '1rem' }}>
-          <Typography variant="body2">설명 내용</Typography>
+        {/* 설명 내용 */}
+        <Form.Item label="설명 내용" required>
           <ReactQuill
             value={explanationText}
             onChange={setExplanationText}
             modules={modules}
             formats={formats}
-            style={{ minHeight: '200px', height: '400px', resize: 'vertical' }}
+            style={{ minHeight: '200px', height: '400px' }}
           />
-        </Box>
+        </Form.Item>
 
-        <Button type="submit" variant="contained" color="primary" fullWidth sx={{ marginTop: '3rem' }}>
-          {isEdit ? '수정하기' : '저장하기'}
-        </Button>
+        <Form.Item>
+          <Button type="primary" htmlType="submit" block>
+            {isEdit ? '수정하기' : '저장하기'}
+          </Button>
+        </Form.Item>
 
-        {errorMessage && <Typography color="red">{errorMessage}</Typography>}
-      </form>
-    </Box>
+        {errorMessage && <Text type="danger">{errorMessage}</Text>}
+      </Form>
+    </div>
   );
 };
 

@@ -40,8 +40,77 @@
 .contents {
   max-width: 1248px;
   margin: 0 auto;
-  margin-top: 1.9rem;
+  margin-top: 2.4rem;
   width: 100%;
+}
+
+
+.wiki-inline-search { display: none; }
+
+@media (min-width: 720px) {
+  .wiki-inline-search {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+  .wiki-inline-search input {
+    width: 150%;               
+    height: 32px;                  /* 네비 라인 높이에 맞추기 (필요시 36/40 등 조정) */
+    border: 1px solid #d9d9d9;
+    font-size: 0.9rem;
+    padding: 0 8px;
+    outline: none;
+  }
+  .wiki-inline-search button {
+    height: 32px;                  /* 라인 높이 동일 */
+    border: 1px solid #d9d9d9;
+    font-size: 0.9rem;
+    background: #f5f5f5;
+    cursor: pointer;
+    padding: 0 10px;               /* 텍스트 들어갈 정도만 */
+    white-space: nowrap;
+  }
+}
+
+/* 넓은 화면에서는 위키 상단 전폭 검색바를 숨김 */
+@media (min-width: 720px) {
+  .wiki-top-search { display: none !important; }
+}
+
+/* 600px 이하에서는 전폭 검색바 보여주기 */
+@media (max-width: 719.98px) {
+  .wiki-top-search { display: block; }
+}
+
+@media (min-width: 720px) {
+  .contents-wiki {
+    max-width: 1248px;
+    margin: 0 auto;
+    margin-top: 2.9rem;
+    width: 100%;
+  }
+}
+
+@media (max-width: 719.98px) {
+  .contents-wiki {
+    max-width: 1248px;
+    margin: 0 auto;
+    margin-top: 1.9rem;
+    width: 100%;
+  }
+}
+
+
+
+.contents-wiki .ant-typography a.wiki-title-link {
+  color: inherit;
+  text-decoration: black;
+}
+
+.contents-wiki .ant-typography a.wiki-title-link:hover {
+  text-decoration: underline;
 }
 
 .whiteBox{
