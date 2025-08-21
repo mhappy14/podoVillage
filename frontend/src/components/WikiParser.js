@@ -34,8 +34,8 @@ export default function parseWikiSyntax(input) {
   // ---- 블록 수준 ----
   text = parseFolding(text);
   text = parseCodeBlocks(text);
-  const hCtx = renderHeadingsCollect(text); // H2~H6 + 앵커 수집
-  text = hCtx.html;
+  const secCtx = renderNumberedSections(text); // 번호/접기/앵커 생성
+  text = secCtx.html;
   text = parseTables(text);
   text = parseLists(text);
   text = parseBlockquotes(text);
@@ -56,7 +56,7 @@ export default function parseWikiSyntax(input) {
 
   // ---- 목차 주입 ----
   if (text.includes(TOC_TOKEN)) {
-    text = text.replaceAll(TOC_TOKEN, buildTOC(hCtx.headings));
+    text = text.replaceAll(TOC_TOKEN, buildTOCNumbered(secCtx.headings));
   }
 
   // ---- 문단 포장 ----
@@ -68,6 +68,137 @@ export default function parseWikiSyntax(input) {
     if (text.includes('__FOOT_PLACE__')) text = text.replaceAll('__FOOT_PLACE__', footHtml);
     else text += footHtml;
   }
+
+  // ---- 문단 번호 + 접기 + 앵커 (== ~ ======) ----
+// 제목 끝에 {fold}|{접기} 를 붙이면 기본 접힘, {open}|{펼침} 이면 강제 펼침.
+// 기본값: 펼침(open)
+function renderNumberedSections(text) {
+  const lines = text.split('\n');
+
+  // 탐색: 제목 라인 찾기
+  const heads = []; // {idx, level(2~6), rawTitle, flags:{fold/open}, lineText}
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(={2,6})\s*(.+?)\s*\1\s*$/);
+    if (!m) continue;
+    const level = m[1].length; // 2~6
+    let raw = m[2].trim();
+
+    // 상태 마커 파싱
+    let folded = false, forcedOpen = false;
+    // {fold}/{open} 한국어 동의어 허용
+    raw = raw.replace(/\{(fold|접기)\}\s*$/i, () => { folded = true; return ''; })
+             .replace(/\{(open|펼침)\}\s*$/i, () => { forcedOpen = true; return ''; })
+             .trim();
+
+    heads.push({ idx: i, level, rawTitle: raw, flags: { folded, forcedOpen }, lineText: lines[i] });
+  }
+
+  if (!heads.length) {
+    return { html: text, headings: [] };
+  }
+
+  // 섹션 경계 계산
+  for (let i = 0; i < heads.length; i++) {
+    const cur = heads[i];
+    // 자신과 같은 레벨 이상이 다시 나오면 그 전까지가 본문
+    let end = lines.length;
+    for (let j = i + 1; j < heads.length; j++) {
+      if (heads[j].level <= cur.level) { end = heads[j].idx; break; }
+    }
+    cur.startContent = cur.idx + 1;
+    cur.endContent = end;
+  }
+
+  // 자동 번호 계산 (2~6레벨만 사용)
+  const counters = [0,0,0,0,0,0,0]; // idx 0~6 (2~6 사용)
+  heads.forEach(h => {
+    const L = h.level; // 2..6
+    counters[L] += 1;
+    for (let k = L + 1; k <= 6; k++) counters[k] = 0;
+    h.number = counters.slice(2, L + 1).filter(Boolean).join('.');
+  });
+
+  // id/앵커 생성: #s-1, #s-1.2, #s-1.2.3 ...
+  heads.forEach((h, i) => {
+    h.sid = `s-${h.number}`;
+    // 제목 기반 앵커도 보조로 제공 (과거 내부링크 호환)
+    h.titleId = slugId(h.rawTitle);
+    h.open = h.flags.forcedOpen ? true : !h.flags.folded; // 기본 true
+  });
+
+  // 출력 조립: <details open><summary>번호 제목</summary> ... </details>
+  // 계층 구조를 유지하면서 중첩 details 생성
+  const out = [];
+  let cursor = 0;
+  const openStack = []; // {level, closeAtIndex}
+
+  for (let i = 0; i < heads.length; i++) {
+    const h = heads[i];
+
+    // 제목 이전의 일반 텍스트(문서 시작부) 출력
+    while (cursor < h.idx) { out.push(lines[cursor++]); }
+
+    // 스택 정리: 현재 헤더 레벨 이하로 내려오면 닫기
+    while (openStack.length && openStack[openStack.length - 1].level >= h.level) {
+      out.push(`</div></details>`); // 본문 컨테이너 닫고 details 닫기
+      openStack.pop();
+    }
+
+    // 타이틀 행 대체
+    const headingTag = `h${h.level}`;
+    const numberHtml = `<span class="secno">${h.number}</span>`;
+    const titleHtml = `${escapeHtml(h.rawTitle)}`;
+
+    const openAttr = h.open ? ' open' : '';
+    out.push(
+      `<a id="${h.sid}"></a><a id="${h.titleId}"></a>` + // 두 개 앵커 제공
+      `<details class="nm-sec nm-sec-l${h.level}"${openAttr}>` +
+      `<summary><${headingTag} class="nm-sec-title">${numberHtml} ${titleHtml}</${headingTag}></summary>` +
+      `<div class="nm-sec-body">`
+    );
+
+    // 본문은 "제목 다음 줄"부터 시작해야 하므로 커서를 한 칸 전진
+    cursor = h.idx + 1;
+    const nextHeaderIdx = (i + 1 < heads.length) ? heads[i + 1].idx : h.endContent;
+    while (cursor < nextHeaderIdx) {
+      out.push(lines[cursor++]);
+    }
+
+    // 스택에 열림 푸시 (다음 형제/부모 나오면 닫을 것)
+    openStack.push({ level: h.level });
+  }
+
+  // 남은 본문
+  while (cursor < lines.length) { out.push(lines[cursor++]); }
+  // 열린 섹션 모두 닫기
+  while (openStack.length) { out.push(`</div></details>`); openStack.pop(); }
+
+  return { html: out.join('\n'), headings: heads };
+}
+
+// 번호 포함 목차
+function buildTOCNumbered(heads){
+  if (!heads.length) return '';
+  // 트리 구성
+  const root = { level: 1, children: [] };
+  const stack = [root];
+  heads.forEach(h => {
+    while (stack[stack.length - 1].level >= h.level) stack.pop();
+    const node = {
+      level: h.level,
+      children: [],
+      html: `<a href="#${h.sid}"><span class="secno">${escapeHtml(h.number)}</span> ${escapeHtml(h.rawTitle)}</a>`
+    };
+    stack[stack.length - 1].children.push(node);
+    stack.push(node);
+  });
+  const render = nodes => !nodes?.length ? '' :
+    `<ul style="list-style:none;padding-left:1rem;margin:0.25rem 0">${nodes.map(n =>
+      `<li style="margin:2px 0">${n.html}${render(n.children)}</li>`
+    ).join('')}</ul>`;
+  return `<nav class="toc" id="toc" style="border:1px solid #e5e7eb;background:#f8fafc;border-radius:12px;padding:12px;margin:12px 0"><div style="font-weight:600;margin-bottom:6px">목차</div>${render(root.children)}</nav>`;
+}
+
 
   return text;
 }

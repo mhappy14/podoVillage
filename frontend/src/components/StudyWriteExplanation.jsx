@@ -103,8 +103,8 @@ const StudyWriteExplanation = ({
   };
 
   return (
-    <div style={{ margin: '1rem' }}>
-      <Typography.Title level={5}>{isEdit ? 'Edit Explanation' : 'Write Explanation'}</Typography.Title>
+    <div style={{ margin: '0 1rem 0 1rem' }}>
+      <Typography.Title level={5} style={{ margin: '0' }}>{isEdit ? 'Edit Explanation' : 'Write Explanation'}</Typography.Title>
       <Form layout="vertical" onFinish={handleSave}>
         {/* 시험명, 시험회차, 문항 한 줄 */}
         <Row gutter={16}>

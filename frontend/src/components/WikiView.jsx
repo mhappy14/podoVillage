@@ -1,8 +1,9 @@
 // src/WikiView.jsx
-import React, { useEffect, useRef, useState } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
 import AxiosInstance from './AxiosInstance';
 import parseWikiSyntax from './WikiParser';
+import DOMPurify from 'dompurify';
 import { Card, Typography, Button, Spin, Alert, Space, Tag, message } from 'antd';
 
 const { Title, Paragraph } = Typography;
@@ -21,6 +22,11 @@ export default function WikiView() {
   const navigate = useNavigate();
   const location = useLocation();
   const flashedRef = useRef(false);
+  
+  const html = useMemo(
+    () => DOMPurify.sanitize(parseWikiSyntax(page?.content || '')),
+    [page?.content]
+  );
 
   useEffect(() => {
     if (!flashedRef.current && location.state?.justSaved) {
@@ -112,9 +118,10 @@ export default function WikiView() {
 
   return (
     <Card
-      title={<Title level={3}>{page?.title || title}</Title>}
+      style={{ margin: '2rem 0 2rem 0' }}
+      title={<Link to={`/wiki/v/${encodeURIComponent(title)}`}><Typography.Title level={3} style={{ margin: '0' }}>{page?.title || title}</Typography.Title></Link>}
       extra={
-        <Space wrap>
+        <Space style={{ margin: '0' }}>
           <Tag color="default">{versionBadge}</Tag>
           <Button onClick={() => navigate(`/wiki/v/${encodeURIComponent(title)}/versionslist`)} disabled={missing}>
             버전 목록 보기
@@ -130,28 +137,28 @@ export default function WikiView() {
           </Button>
         </Space>
       }
-      style={{ marginTop: '2rem' }}
     >
-      <Paragraph>
+      <Paragraph >
         {missing ? (
           <div style={{ lineHeight: 1.8 }}>
             <div style={{ marginBottom: 12, color: '#64748b' }}>작성되지 않은 문서입니다.</div>
             <Button
               type="dashed"
-              onClick={() =>
-                navigate(`/wiki/v/${encodeURIComponent(title)}/edit`, { state: { allowEdit: true } })
-              }
+              onClick={() => {
+                const safeTitle = String(title).trim().replace(/\/+$/, ''); // 끝 슬래시 제거
+                navigate(`/wiki/v/${encodeURIComponent(safeTitle)}/edit`, {
+                  state: { allowEdit: true, startBlank: true }, // ← 요 포인트
+                });
+              }}
               disabled={!isLoggedIn}
             >
               {isLoggedIn ? '이 문서를 새로 작성하기' : '로그인 후 작성할 수 있습니다'}
             </Button>
           </div>
         ) : (
-          <div
-            onClick={handleContentClick}
-            dangerouslySetInnerHTML={{ __html: contentHtml }}
-            style={{ whiteSpace: 'pre-wrap' }}
-          />
+          <>
+            <div className="wiki-body" dangerouslySetInnerHTML={{ __html: html }} />
+          </>
         )}
       </Paragraph>
     </Card>

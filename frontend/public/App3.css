@@ -1,0 +1,75 @@
+/* === Wiki 전용 공통 스타일 === */
+
+/* 본문 컨테이너(미리보기/뷰 공통) */
+.wiki-body,
+.wiki-preview {
+  /* 타이포/레이아웃 통일 */
+  font-size: 0.8rem;
+  line-height: 1.7;
+  color: rgba(0,0,0,.88);
+  box-sizing: border-box;
+
+  /* 표/코드/인용 등의 기본 폭 맞춤 */
+  max-width: 100%;
+}
+
+.wiki-body *,.wiki-preview * { box-sizing: border-box; }
+
+/* 제목 스케일 (== ~ ======) */
+.wiki-body h2, .wiki-preview h2 { font-size: 1.4rem;  font-weight: 700; }
+.wiki-body h3, .wiki-preview h3 { font-size: 1.2rem;  font-weight: 700; }
+.wiki-body h4, .wiki-preview h4 { font-size: 1.0rem;  font-weight: 600; }
+.wiki-body h5, .wiki-preview h5 { font-size: 0.9rem;  font-weight: 600; }
+.wiki-body h6, .wiki-preview h6 { font-size: 0.8rem;  font-weight: 600; }
+
+/* 단락/목록/인용 */
+.wiki-body p, .wiki-preview p { margin: 0; padding: 0; }
+.wiki-body ul, .wiki-preview ul { margin: 0; padding: 0; }
+.wiki-body ol, .wiki-preview ol { margin: 0; padding: 0; }
+.wiki-body blockquote, .wiki-preview blockquote {
+  border-left: 3px solid #e5e7eb;
+  margin: 0;
+  padding: 0;
+  background: #fafafa;
+}
+
+/* 표 */
+.wiki-body table, .wiki-preview table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .95em; }
+.wiki-body table td, .wiki-body table th,
+.wiki-preview table td, .wiki-preview table th {
+  border: 1px solid #e5e7eb; padding: 6px 8px; vertical-align: top;
+}
+
+/* 이미지 */
+.wiki-body img, .wiki-preview img { max-width: 100%; height: auto; }
+
+/* 코드 블록 */
+.wiki-body pre, .wiki-preview pre { padding: 12px; overflow: auto; background: #0f172a0f; border-radius: 6px; }
+.wiki-body code, .wiki-preview code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+
+/* 접기(details) — nm-sec는 App1.css에도 있으나, 보조 통일 */
+.wiki-body details.nm-sec, .wiki-preview details.nm-sec { margin: .5rem 0 .75rem; }
+.wiki-body details.nm-sec > summary, .wiki-preview details.nm-sec > summary {
+  cursor: pointer; list-style: none; user-select: none;
+}
+.wiki-body details.nm-sec > summary::-webkit-details-marker,
+.wiki-preview details.nm-sec > summary::-webkit-details-marker { display: none; }
+.wiki-body .nm-sec-title, .wiki-preview .nm-sec-title { display: inline; margin: 0; }
+.wiki-body .secno, .wiki-preview .secno { font-weight: 600; margin-right: .25rem; }
+.wiki-body .nm-sec-body, .wiki-preview .nm-sec-body { margin: .25rem 0 .5rem; }
+
+/* 목차 */
+.wiki-body .toc, .wiki-preview .toc {
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 12px;
+  margin: 12px 0;
+}
+.wiki-body .toc ul, .wiki-preview .toc ul { list-style: none; padding-left: 1rem; margin: .25rem 0; }
+.wiki-body .toc li, .wiki-preview .toc li { margin: 2px 0; }
+
+/* 각주 */
+.wiki-body .footnotes, .wiki-preview .footnotes { margin-top: 1rem; font-size: .92em; }
+.wiki-body .footnotes ol, .wiki-preview .footnotes ol { margin: .25rem 0 .25rem 1.25rem; }
+.wiki-body .footnotes .fn-back, .wiki-preview .footnotes .fn-back { margin-left: .5rem; text-decoration: none; }

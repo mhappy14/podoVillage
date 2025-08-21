@@ -84,13 +84,13 @@ const StudyWrite = () => {
   }, []);
 
   return (
-    <div style={{ padding: '20px' }}>
-      <Title level={4} style={{ marginBottom: '16px' }}>
+    <div style={{ padding: '0 1rem 0 1rem' }}>
+      <Title level={4} style={{ marginBottom: '0.5rem' }}>
         Register my answer
       </Title>
 
       {/* 상단 - Explanation */}
-      <Card style={{ marginBottom: '2rem' }}>
+      <Card style={{ marginBottom: '2rem', padding: '0' }}>
         <StudyWriteExplanation
           examList={examList}
           examNumberList={examNumberList}
@@ -98,6 +98,7 @@ const StudyWrite = () => {
           detailsubjectList={detailsubjectList}
           questionList={questionList}
           onRefresh={fetchExplanations}
+          style={{ padding: '0' }}
         />
       </Card>
 

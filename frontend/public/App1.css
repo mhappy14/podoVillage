@@ -103,6 +103,10 @@
 }
 
 
+.wiki-preview table { width: 100%; border-collapse: collapse; }
+.wiki-preview table td, .wiki-preview table th { padding: 6px 8px; }
+.wiki-preview .nm-sec summary { cursor: pointer; list-style: none; }
+.wiki-preview .nm-sec summary::-webkit-details-marker { display: none; }
 
 .contents-wiki .ant-typography a.wiki-title-link {
   color: inherit;
@@ -145,3 +149,9 @@
 .button{
   background: rgb(66, 8, 160) !important;
 }
+
+.nm-sec summary { cursor: pointer; list-style: none; }
+.nm-sec summary::-webkit-details-marker { display: none; }
+.nm-sec .nm-sec-title { display: inline; margin: 0; }
+.nm-sec .secno { font-weight: 600; margin-right: .25rem; }
+.nm-sec-body { margin: .25rem 0 .75rem 0; }

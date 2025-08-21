@@ -30,7 +30,7 @@ import PasswordReset from './components/PasswordReset.jsx';
 
 function App() {
   const location = useLocation();
-  const cssFile = location.pathname === '/about' ? '/App2.css' : '/App1.css';
+  const isWiki = location.pathname.startsWith('/wiki');
 
   function DefaultLayout() {
     return <div className="contents"><Outlet /></div>;
@@ -42,7 +42,13 @@ function App() {
   return (
     <>
       <Helmet>
-        <link key={cssFile} rel="stylesheet" type="text/css" href={cssFile} />
+        <link rel="stylesheet" type="text/css" href="/App1.css" />
+        {location.pathname === '/about' && (
+          <link rel="stylesheet" type="text/css" href="/App2.css" />
+        )}
+        {isWiki && (
+          <link rel="stylesheet" type="text/css" href="/App3.css" />
+        )}
       </Helmet>
 
       {/* Navbar 고정 */}
@@ -63,33 +69,33 @@ function App() {
           <Route
             path="/*"
             element={
-                <Routes>
-                  <Route element={<DefaultLayout />}>
-                    <Route path="/home" element={<Home />} />
-                    <Route path="/study" element={<Study />} />
-                    <Route path="/study/write" element={<StudyWrite />} />
-                    <Route path="/study/view/:id" element={<StudyView />} />
-                    <Route path="/study/edit/:id" element={<StudyEdit />} />
-                    <Route path="/paper" element={<Paper />} />
-                    <Route path="/paper/write" element={<PaperWrite />} />
-                    <Route path="/paper/view" element={<PaperView />} />
-                    <Route path="/paper/view/:id" element={<PaperView />} />
-                    <Route path="/paper/edit/:id" element={<PaperEdit />} />
-                    <Route path="/art" element={<Art />} />
-                    <Route path="/place" element={<Place />} />
-                    <Route path="/invest" element={<Invest />} />
-                    <Route path="/mypage" element={<Mypage />} />
-                  </Route>
+              <Routes>
+                <Route element={<DefaultLayout />}>
+                  <Route path="/home" element={<Home />} />
+                  <Route path="/study" element={<Study />} />
+                  <Route path="/study/write" element={<StudyWrite />} />
+                  <Route path="/study/view/:id" element={<StudyView />} />
+                  <Route path="/study/edit/:id" element={<StudyEdit />} />
+                  <Route path="/paper" element={<Paper />} />
+                  <Route path="/paper/write" element={<PaperWrite />} />
+                  <Route path="/paper/view" element={<PaperView />} />
+                  <Route path="/paper/view/:id" element={<PaperView />} />
+                  <Route path="/paper/edit/:id" element={<PaperEdit />} />
+                  <Route path="/art" element={<Art />} />
+                  <Route path="/place" element={<Place />} />
+                  <Route path="/invest" element={<Invest />} />
+                  <Route path="/mypage" element={<Mypage />} />
+                </Route>
 
-                  <Route element={<WikiLayout />}>
-                    <Route path="/wiki" element={<Wiki />} >
-                      <Route path="v/*" element={<WikiView />} />
-                      <Route path="v/:title/versionslist" element={<WikiVersionList />} />
-                      <Route path="v/:title/versionslist/:id" element={<WikiVersionView />} />
-                      <Route path="v/:title/edit" element={<WikiEdit />} />
-                    </Route>
+                <Route element={<WikiLayout />}>
+                  <Route path="/wiki" element={<Wiki />} >
+                    <Route path="v/*" element={<WikiView />} />
+                    <Route path="v/:title/versionslist" element={<WikiVersionList />} />
+                    <Route path="v/:title/versionslist/:id" element={<WikiVersionView />} />
+                    <Route path="v/:title/edit" element={<WikiEdit />} />
                   </Route>
-                </Routes>
+                </Route>
+              </Routes>
             }
           />
         </Routes>

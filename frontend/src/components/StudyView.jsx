@@ -106,7 +106,7 @@ const StudyView = () => {
                 </Title>
               </Col>
               <Col style={{ textAlign: 'right' }}>
-                <Text strong>{selectedExplanation.exam.examname}</Text> <br />
+                <Text strong>{selectedExplanation.exam.examname} </Text>
                 <Text>{selectedExplanation.examnumber.examnumber}회 ({selectedExplanation.examnumber.year})</Text> <br />
                 <Text>작성자: {selectedExplanation.nickname?.nickname || 'null'}</Text>
               </Col>
@@ -239,7 +239,9 @@ const StudyView = () => {
               <Pagination current={currentPage} total={explanations.length} pageSize={itemsPerPage} onChange={handlePageChange} />
             </Col>
             <Col>
-              <Button type="primary" as={Link} to="/study/write">Write</Button>
+              <Button type="primary">
+                        <Link to="/study/write" style={{ color: 'white' }}>Write</Link>
+                      </Button>
             </Col>
           </Row>
         </>
