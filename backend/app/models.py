@@ -1,8 +1,10 @@
 from django.db import models
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth import get_user_model  # get_user_model 추가
+from django.core.exceptions import ValidationError
+
 
 from django_rest_passwordreset.signals import reset_password_token_created
 from django.dispatch import receiver 
@@ -50,20 +52,124 @@ class CustomUser(AbstractUser):
 User = get_user_model()
 
 class Exam(models.Model):
-	STATUS = ( 
-		("Active", "Active"), 
-		("Draft", "Draft"),
-		("Disabled", "Disabled"),
-	)
+    STATUS = (
+        ("Active", "Active"),
+        ("Draft", "Draft"),
+        ("Disabled", "Disabled"),
+    )
 
-	examname = models.CharField(max_length=200, unique=True, null=False)
-    
-	def __str__(self):
-		return self.examname
+    EXAMTYPE = (
+        ("License", "자격증"),
+        ("Public",  "공무원"),
+        ("Recruit", "기업채용"),
+        ("Other",   "기타"),
+    )
+
+    # 채용기관 (공무원일 때만 사용)
+    RAGENT = (
+        ("국가직", "국가직"),
+        ("지방직", "지방직"),
+        ("서울시", "서울시"),
+        ("국회직", "국회직"),
+        ("법원직", "법원직"),
+        ("경찰",   "경찰"),
+        ("소방",   "소방"),
+        ("해경",   "해경"),
+        ("군무원", "군무원"),
+        ("기상직", "기상직"),
+        ("지역인재", "지역인재"),
+        ("계리직", "계리직"),
+        ("간호직", "간호직"),
+        ("비상대비", "비상대비"),
+    )
+
+    # Ragent별 허용 직급(옵션) 맵
+    _RPOSITION_MAP = {
+        "국가직": ["5급", "5급경력", "5급승진", "7급", "9급"],
+        "지방직": ["7급", "9급"],
+        "서울시": ["7급", "9급", "9급경력", "연구직", "지도직"],
+        "국회직": ["5급", "8급", "9급"],
+        "법원직": ["5급", "5급승진", "9급"],
+        "경찰":   ["간부후보", "경력채용", "공채", "승진시험", "특공대", "경찰대편입"],
+        "소방":   ["간부후보", "경력채용", "공채", "승진시험"],
+        "해경":   ["간부후보", "경력채용", "공채", "승진시험"],
+        "군무원": ["5급", "7급", "9급"],
+        "기상직": ["7급", "9급"],
+        # 아래 4개는 직급 필수 조건 없음(명시 X)
+        "지역인재": [],
+        "계리직": [],
+        "간호직": [],
+        "비상대비": [],
+    }
+
+    # UI를 위한 전체 직급 선택지(필요 시)
+    RPOSITION_ALL = sorted({p for arr in _RPOSITION_MAP.values() for p in arr})
+    RAGENT_NEED_POSITION = {"국가직", "지방직", "서울시", "국회직", "법원직", "경찰", "소방", "해경", "군무원", "기상직"}
+    RAGENT_NEED_RGROUP   = {"국가직", "지방직", "서울시", "국회직", "법원직"}
+
+    examname = models.CharField(max_length=200, unique=True, null=False)
+    examtype = models.CharField(max_length=20, choices=EXAMTYPE, null=False, default="License")
+
+    # 조건부 필드들: DB 레벨에선 optional로 두고, 검증은 clean()/serializer에서 강제
+    ragent    = models.CharField(max_length=10, choices=RAGENT, null=True, blank=True)
+    rposition = models.CharField(max_length=20, null=True, blank=True)  # choices는 검증으로 제한
+    # 요청: 국가직/지방직/서울시/국회직/법원직 선택 시 rgroup 텍스트 입력(고유)
+    # unique=True를 그대로 적용하면 전체 Exam에서 전역 고유 제약이니, 의도라면 유지.
+    rgroup    = models.CharField(max_length=20, unique=True, null=True, blank=True)
+
+    def __str__(self):
+        # 사람이 보기 좋은 표시 (examtype 레이블 + ragent/rposition/rgroup 일부)
+        parts = [self.examname, self.get_examtype_display()]
+        if self.examtype == "Public":
+            if self.ragent:
+                parts.append(self.ragent)
+            if self.rposition:
+                parts.append(self.rposition)
+            if self.rgroup:
+                parts.append(self.rgroup)
+        return " / ".join(parts)
+
+    def clean(self):
+        # 모델 레벨 검증 (admin/ORM 사용 시 안전망)
+        if self.examtype == "Public":
+            # ragent 필수
+            if not self.ragent:
+                raise ValidationError({"ragent": "공무원 시험은 채용기관(Ragent)을 반드시 선택해야 합니다."})
+
+            # rposition 필수 여부 판단
+            if self.ragent in self.RAGENT_NEED_POSITION:
+                if not self.rposition:
+                    raise ValidationError({"rposition": f"{self.ragent}은(는) 직급(Rposition)을 반드시 선택해야 합니다."})
+                # 허용 값 체크
+                allowed = set(self._RPOSITION_MAP.get(self.ragent, []))
+                if self.rposition not in allowed:
+                    raise ValidationError({"rposition": f"{self.ragent}에서는 {sorted(allowed)} 중 하나를 선택해야 합니다."})
+            else:
+                # 직급 불필수군(지역인재/계리직/간호직/비상대비)
+                if self.rposition:
+                    # 원치 않으면 여기서 허용하거나 경고/차단 선택 가능. 여기선 허용.
+                    pass
+
+            # rgroup 필수 여부 판단
+            if self.ragent in self.RAGENT_NEED_RGROUP:
+                if not self.rgroup:
+                    raise ValidationError({"rgroup": f"{self.ragent}은(는) 직류(Rgroup)를 반드시 입력해야 합니다."})
+            else:
+                # 불필수군은 비워도 무방
+                pass
+        else:
+            # 공무원이 아니면 세 필드는 모두 비워두는 걸 권장(강제는 아님)
+            # 필요 시 아래처럼 아예 초기화해도 됨:
+            # self.ragent = None
+            # self.rposition = None
+            # self.rgroup = None
+            pass
+
+        super().clean()
 
 class Examnumber(models.Model):
 	exam = models.ForeignKey(Exam, on_delete=models.SET_NULL, null=True)
-	examnumber = models.PositiveIntegerField(null=False)
+	examnumber = models.PositiveIntegerField(null=False, default=1)
 	year = models.PositiveIntegerField(null=False)
 	slug = models.SlugField(unique=True, null=True, blank=True)
     
@@ -78,30 +184,66 @@ class Examnumber(models.Model):
 		super(Examnumber, self).save(*args, **kwargs)
     
 	def questions(self):
-		return Question.objects.filter(subjectnumber=self).order_by("questionnumber")
+		return Question.objects.filter(examnumber=self).order_by("qsubject", "qnumber")
 
 	class Meta:
 			unique_together = ('exam', 'examnumber')  # 복합 유일성 제약 조건
 
 class Question(models.Model):
+	TYPE = (
+			("Sj", "주관식"), 
+			("Oj", "객관식"),
+	)
+
 	exam = models.ForeignKey(Exam, on_delete=models.SET_NULL, null=True)
 	examnumber = models.ForeignKey(Examnumber, on_delete=models.SET_NULL, null=True)
-	questionnumber1 = models.PositiveIntegerField(null=True)
-	questionnumber2 = models.PositiveIntegerField(null=True)
-	questiontext = models.CharField(max_length=1000)
+	qtype = models.CharField(max_length=2, choices=TYPE, default="Sj")
+	qsubject = models.PositiveIntegerField(null=True)
+	qnumber = models.PositiveIntegerField(null=True)
+	qtext = models.CharField(max_length=1000)
 	slug = models.SlugField(unique=True, null=True, blank=True, max_length=200)
     
 	def __str__(self):
-		return  f"{self.questionnumber1} - {self.questionnumber2} - {self.questiontext}"
+		return  f"{self.qsubject} - {self.qnumber} - {self.qtext}"
+
+	def clean(self):
+		# 주관식이면 보기 없어도 됨
+		if self.qtype == "Sj":
+				return
+
+		# 객관식, 최소 2개 보기 권장 & 정답 최소 1개
+		opts = list(self.options.all()) if self.pk else []
+		if self.qtype == "Oj":
+			# 저장 직전 clean은 옵션이 아직 저장 안됐을 수도 있으므로,
+			# 실제 검증은 Serializer/폼에서도 한번 수행하는 것을 권장
+			pass
 
 	def save(self, *args, **kwargs):
 		if not self.slug:
-			combined_value = f"{self.examnumber.examnumber}회 {self.questionnumber1}-{self.questionnumber2}. {self.questiontext}"
+			combined_value = f"{self.examnumber.examnumber}회 {self.qsubject}-{self.qnumber}. {self.qtext}"
 			self.slug = combined_value
 		super(Question, self).save(*args, **kwargs)
     
 	def explanations(self):
 		return Explanation.objects.filter(question=self).annotate(like_count=Count('like')).order_by('-like_count')
+
+class Option(models.Model):
+	"""객관식 보기. 개수 가변, 정답 복수 허용 가능."""
+	question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="options")
+	order = models.PositiveSmallIntegerField()            # 보기 번호(1,2,3,...)
+	text = models.CharField(max_length=1000)             	# 보기 내용
+	is_correct = models.BooleanField(default=False)       # 정답 여부
+	is_active = models.BooleanField(default=True)         # 삭제 대신 비활성 처리할 때
+
+	class Meta:
+			unique_together = (("question", "order"),)
+			indexes = [
+					models.Index(fields=["question", "order"]),
+					models.Index(fields=["question", "is_correct"]),
+			]
+
+	def __str__(self):
+			return f"[{self.order}] {self.text[:40]}"
 
 class Mainsubject(models.Model):
 	exam = models.ForeignKey(Exam, on_delete=models.SET_NULL, null=True)
@@ -164,9 +306,6 @@ class Explanation(models.Model):
 				strip=True,  # 허용하지 않는 태그 제거
 		)
 		super(Explanation, self).save(*args, **kwargs)
-
-	def __str__(self):
-		return  f"{self.question.slug}의 해설"
 
 #######################에세이#######################저자-기관-출판정보-본문
 #######################에세이#######################

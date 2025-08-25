@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Form, Select, Input, Button, Typography, Row, Col, Checkbox, message } from 'antd';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
@@ -7,6 +7,20 @@ import AxiosInstance from './AxiosInstance';
 
 const { Option } = Select;
 const { Text } = Typography;
+
+// 배열/페이징 응답 정규화
+const asArray = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.results)) return payload.results;
+  return [];
+};
+
+const sortByKey = (array, key) =>
+  (array || []).slice().sort((a, b) => {
+    const va = (a?.[key] ?? '').toString();
+    const vb = (b?.[key] ?? '').toString();
+    return va.localeCompare(vb);
+  });
 
 const StudyWriteExplanation = ({
   examList,
@@ -19,17 +33,59 @@ const StudyWriteExplanation = ({
   isEdit = false,
 }) => {
   const navigate = useNavigate();
+
+  // 정규화된 리스트
+  const exams = useMemo(() => asArray(examList), [examList]);
+  const examNumbers = useMemo(() => asArray(examNumberList), [examNumberList]);
+  const questions = useMemo(() => asArray(questionList), [questionList]);
+  const mains = useMemo(() => asArray(mainsubjectList), [mainsubjectList]);
+  const details = useMemo(() => asArray(detailsubjectList), [detailsubjectList]);
+  const examIdOf = (en) => (typeof en?.exam === 'object' ? en?.exam?.id : en?.exam);
+  const examnumberIdOf = (q) => (typeof q?.examnumber === 'object' ? q?.examnumber?.id : q?.examnumber);
+
+
+  // 초기값
   const [selectedExam, setSelectedExam] = useState(selectedExplanation?.exam?.id || '');
   const [selectedExamNumber, setSelectedExamNumber] = useState(selectedExplanation?.examnumber?.id || '');
   const [selectedQuestion, setSelectedQuestion] = useState(selectedExplanation?.question?.id || '');
   const [selectedMainsubjects, setSelectedMainsubjects] = useState(
-    selectedExplanation?.mainsubject?.map((ms) => ms.id) || []
+    (selectedExplanation?.mainsubject || []).map((ms) => ms.id)
   );
   const [selectedDetailsubjects, setSelectedDetailsubjects] = useState(
-    selectedExplanation?.detailsubject?.map((ds) => ds.id) || []
+    (selectedExplanation?.detailsubject || []).map((ds) => ds.id)
   );
   const [explanationText, setExplanationText] = useState(selectedExplanation?.explanation || '');
   const [errorMessage, setErrorMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // 종속 필터
+  const filteredExamNumbers = useMemo(() => {
+    if (!selectedExam) return [];
+    const sel = Number(selectedExam);
+    return examNumbers.filter((en) => Number(examIdOf(en)) === sel);
+  }, [selectedExam, examNumbers]);
+
+  const filteredQuestionList = useMemo(() => {
+    if (!selectedExamNumber) return [];
+    const sel = Number(selectedExamNumber);
+    return questions.filter((q) => Number(examnumberIdOf(q)) === sel);
+  }, [selectedExamNumber, questions]);
+
+  const filteredMainsubjects = useMemo(() => {
+    if (!selectedExam) return [];
+    return mains.filter((ms) => ms?.exam?.id === Number(selectedExam));
+  }, [selectedExam, mains]);
+
+  const filteredDetailsubjects = useMemo(() => {
+    // 선택한 주요과목이 있으면 그 하위만, 없으면 선택한 시험 기준으로 필터
+    if (selectedMainsubjects.length > 0) {
+      return details.filter((ds) => selectedMainsubjects.includes(ds?.mainslug?.id));
+    }
+    if (selectedExam) {
+      return details.filter((ds) => ds?.exam?.id === Number(selectedExam));
+    }
+    return [];
+  }, [selectedMainsubjects, selectedExam, details]);
 
   const modules = {
     toolbar: [
@@ -40,40 +96,11 @@ const StudyWriteExplanation = ({
       ['clean'],
     ],
   };
-
   const formats = ['header', 'bold', 'italic', 'underline', 'list', 'bullet', 'link', 'image'];
-
-  // 필터링된 데이터
-  const filteredExamNumbers = selectedExam
-    ? examNumberList.filter((examNumber) => examNumber.exam?.id === selectedExam)
-    : examNumberList;
-
-  const filteredQuestionList = selectedExamNumber
-    ? questionList.filter((q) => q.examnumber?.id === selectedExamNumber)
-    : questionList;
-
-  const filteredMainsubjects = selectedExam
-    ? mainsubjectList.filter((ms) => ms.exam?.id === selectedExam)
-    : [];
-
-  const filteredDetailsubjects =
-    selectedMainsubjects.length > 0
-      ? detailsubjectList.filter((ds) => selectedMainsubjects.includes(ds.mainslug?.id))
-      : detailsubjectList;
-
-  const sortByKey = (array, key, referenceArray = null) =>
-    array
-      .slice()
-      .sort((a, b) => {
-        const valueA = referenceArray ? referenceArray.find((item) => item.id === a)?.[key] : a[key];
-        const valueB = referenceArray ? referenceArray.find((item) => item.id === b)?.[key] : b[key];
-        if (!valueA || !valueB) return 0;
-        return valueA.localeCompare(valueB);
-      });
 
   const handleSave = async () => {
     setErrorMessage('');
-    if (!selectedExam || !selectedExamNumber || !selectedQuestion || !explanationText) {
+    if (!selectedExam || !selectedExamNumber || !selectedQuestion || !explanationText.trim()) {
       message.error('모든 필드를 입력해 주세요.');
       return;
     }
@@ -87,26 +114,37 @@ const StudyWriteExplanation = ({
       explanation: explanationText,
     };
 
+    setLoading(true);
     try {
       if (isEdit && selectedExplanation?.id) {
-        const response = await AxiosInstance.patch(`/explanation/${selectedExplanation.id}/`, requestData);
-        if (onSave) onSave(response.data);
+        const response = await AxiosInstance.patch(`explanation/${selectedExplanation.id}/`, requestData);
+        onSave?.(response.data);
         navigate(`/study/view/${selectedExplanation.id}`);
       } else {
-        const response = await AxiosInstance.post('/explanation/', requestData);
-        if (onSave) onSave(response.data);
+        const response = await AxiosInstance.post('explanation/', requestData);
+        onSave?.(response.data);
         navigate(`/study/view/${response.data.id}`);
       }
     } catch (err) {
-      setErrorMessage(err.response?.data?.message || '저장 중 오류가 발생했습니다.');
+      const apiMsg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        (typeof err?.response?.data === 'string' ? err.response.data : null) ||
+        '저장 중 오류가 발생했습니다.';
+      setErrorMessage(apiMsg);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div style={{ margin: '0 1rem 0 1rem' }}>
-      <Typography.Title level={5} style={{ margin: '0' }}>{isEdit ? 'Edit Explanation' : 'Write Explanation'}</Typography.Title>
-      <Form layout="vertical" onFinish={handleSave}>
-        {/* 시험명, 시험회차, 문항 한 줄 */}
+      <Typography.Title level={5} style={{ margin: 0 }}>
+        {isEdit ? 'Edit Explanation' : 'Write Explanation'}
+      </Typography.Title>
+
+      <Form layout="vertical" onFinish={handleSave} disabled={loading}>
+        {/* 시험명 / 시험회차 / 문항 */}
         <Row gutter={16}>
           <Col span={8}>
             <Form.Item label="시험명" required>
@@ -120,9 +158,12 @@ const StudyWriteExplanation = ({
                   setSelectedMainsubjects([]);
                   setSelectedDetailsubjects([]);
                 }}
+                allowClear
               >
-                {examList.map((exam) => (
-                  <Option key={exam.id} value={exam.id}>{exam.examname}</Option>
+                {exams.map((exam) => (
+                  <Option key={exam?.id} value={exam?.id}>
+                    {exam?.examname}
+                  </Option>
                 ))}
               </Select>
             </Form.Item>
@@ -138,9 +179,12 @@ const StudyWriteExplanation = ({
                   setSelectedQuestion('');
                 }}
                 disabled={!selectedExam}
+                allowClear
               >
-                {filteredExamNumbers.map((examNumber) => (
-                  <Option key={examNumber.id} value={examNumber.id}>{examNumber.slug}</Option>
+                {filteredExamNumbers.map((en) => (
+                  <Option key={en?.id} value={en?.id}>
+                    {en?.slug ?? `${en?.year ?? '-'}년 ${en?.examnumber ?? '-'}회`}
+                  </Option>
                 ))}
               </Select>
             </Form.Item>
@@ -153,16 +197,22 @@ const StudyWriteExplanation = ({
                 value={selectedQuestion}
                 onChange={setSelectedQuestion}
                 disabled={!selectedExamNumber}
+                allowClear
+                showSearch
+                optionFilterProp="children"
               >
                 {filteredQuestionList.map((q) => (
-                  <Option key={q.id} value={q.id}>{q.slug}</Option>
+                  <Option key={q?.id} value={q?.id}>
+                    {/* slug 생성 규칙 유지: "n회 s-n. text" 형식이면 그대로 표시 */}
+                    {q?.slug ?? `${q?.examnumber?.examnumber ?? '-'}회 ${q?.qsubject ?? '-'}-${q?.qnumber ?? '-'}. ${q?.qtext ?? ''}`}
+                  </Option>
                 ))}
               </Select>
             </Form.Item>
           </Col>
         </Row>
 
-        {/* 주요과목, 세부과목 한 줄 */}
+        {/* 주요과목 / 세부과목 */}
         <Row gutter={16}>
           <Col span={12}>
             <Form.Item label="주요과목">
@@ -173,10 +223,11 @@ const StudyWriteExplanation = ({
                 onChange={setSelectedMainsubjects}
                 disabled={!selectedExam}
                 optionLabelProp="label"
+                allowClear
               >
                 {sortByKey(filteredMainsubjects, 'mainslug').map((ms) => (
-                  <Option key={ms.id} value={ms.id} label={ms.mainslug}>
-                    <Checkbox checked={selectedMainsubjects.includes(ms.id)}>{ms.mainslug}</Checkbox>
+                  <Option key={ms?.id} value={ms?.id} label={ms?.mainslug}>
+                    <Checkbox checked={selectedMainsubjects.includes(ms?.id)}>{ms?.mainslug}</Checkbox>
                   </Option>
                 ))}
               </Select>
@@ -191,10 +242,11 @@ const StudyWriteExplanation = ({
                 value={selectedDetailsubjects}
                 onChange={setSelectedDetailsubjects}
                 optionLabelProp="label"
+                allowClear
               >
                 {sortByKey(filteredDetailsubjects, 'detailslug').map((ds) => (
-                  <Option key={ds.id} value={ds.id} label={ds.detailslug}>
-                    <Checkbox checked={selectedDetailsubjects.includes(ds.id)}>{ds.detailslug}</Checkbox>
+                  <Option key={ds?.id} value={ds?.id} label={ds?.detailslug}>
+                    <Checkbox checked={selectedDetailsubjects.includes(ds?.id)}>{ds?.detailslug}</Checkbox>
                   </Option>
                 ))}
               </Select>
@@ -209,12 +261,12 @@ const StudyWriteExplanation = ({
             onChange={setExplanationText}
             modules={modules}
             formats={formats}
-            style={{ minHeight: '200px', height: '400px' }}
+            style={{ minHeight: 200, height: 400 }}
           />
         </Form.Item>
 
         <Form.Item>
-          <Button type="primary" htmlType="submit" block>
+          <Button type="primary" htmlType="submit" block loading={loading}>
             {isEdit ? '수정하기' : '저장하기'}
           </Button>
         </Form.Item>

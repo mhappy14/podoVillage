@@ -1,4 +1,6 @@
 from rest_framework import serializers 
+from django.core.exceptions import ValidationError as DjangoVE
+from rest_framework.exceptions import ValidationError
 from app.models import * 
 from django.contrib.auth import get_user_model, authenticate
 User = get_user_model()
@@ -85,7 +87,7 @@ class CommentSerializer(serializers.ModelSerializer):
 # 6 해설Explanation(글쓴이 - 좋아요 - 북마크 - 날짜)
 class ExplanationSerializer(serializers.ModelSerializer):
     nickname = UserSerializer(read_only=True)
-    comment = CommentSerializer(many=True, read_only=True)
+    comment = CommentSerializer(source="comments_ex", many=True, read_only=True)
     mainsubject = serializers.SerializerMethodField()  # mainsubject의 상세 정보 반환
     detailsubject = serializers.SerializerMethodField()  # detailsubject의 상세 정보 반환
     like_count = serializers.ReadOnlyField()
@@ -181,44 +183,84 @@ class MainsubjectSerializer(serializers.ModelSerializer):
         else:
             self.Meta.depth = 3
 
+class OptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Option
+        fields = ("id", "order", "text", "is_correct", "is_active")
+
 class QuestionSerializer(serializers.ModelSerializer):
-    comment = CommentSerializer(many=True, read_only=True)
-    explanation = ExplanationSerializer(many=True, required=False)
-    
+    options = OptionSerializer(many=True, required=False)
+    explanation = ExplanationSerializer(source="explanation_set", many=True, read_only=True)
+    comment = serializers.SerializerMethodField(read_only=True)
+
+    def get_comment(self, obj):
+        qs = Comment.objects.filter(explanation__question=obj)
+        return CommentSerializer(qs, many=True).data
+
     class Meta:
         model = Question
         fields = "__all__"
 
-    def __init__(self, *args, **kwargs):
-        super(QuestionSerializer, self).__init__(*args, **kwargs)
-        request = self.context.get('request')
-        if request and request.method == 'POST':
-            self.Meta.depth = 0
-        else:
-            self.Meta.depth = 3
+    def _validate_mc_rules_payload(self, qtype, options_payload):
+        if qtype != "Oj":
+            return
+        opts = [o for o in options_payload if o.get("is_active", True)]
+        if len(opts) < 2:
+            raise ValidationError("객관식/TF 문항은 보기가 최소 2개 필요합니다.")
+        correct = [o for o in opts if o.get("is_correct")]
+        if len(correct) < 1:
+            raise ValidationError("객관식/TF 문항은 정답이 최소 1개 필요합니다.")
+
+    def validate(self, attrs):
+        qtype = attrs.get("qtype", getattr(self.instance, "qtype", None))
+        options_payload = self.initial_data.get("options", []) or []
+        self._validate_mc_rules_payload(qtype, options_payload)
+        return attrs
+
+    def create(self, validated_data):
+        opts_data = validated_data.pop("options", [])
+        q = Question.objects.create(**validated_data)
+        for i, od in enumerate(opts_data, start=1):
+            Option.objects.create(
+                question=q,
+                order=od.get("order", i),
+                text=od.get("text", ""),
+                is_correct=od.get("is_correct", False),
+                is_active=od.get("is_active", True),
+            )
+        return q
+
+    def update(self, instance, validated_data):
+        opts_data = validated_data.pop("options", None)
+        for attr, val in validated_data.items():
+            setattr(instance, attr, val)
+        instance.save()
+
+        if opts_data is not None:
+            instance.options.all().delete()
+            for i, od in enumerate(opts_data, start=1):
+                Option.objects.create(
+                    question=instance,
+                    order=od.get("order", i),
+                    text=od.get("text", ""),
+                    is_correct=od.get("is_correct", False),
+                    is_active=od.get("is_active", True),
+                )
+        return instance
 
 class ExamnumberSerializer(serializers.ModelSerializer):
-    comment = CommentSerializer(many=True, read_only=True)
-    question = QuestionSerializer(many=True, required=False)
-    explanation = QuestionSerializer(many=True, required=False)
+    question = QuestionSerializer(source="question_set", many=True, required=False)
+    explanation = ExplanationSerializer(source="explanation_set", many=True, required=False)
     
     class Meta:
         model = Examnumber
         fields = "__all__"
 
-    def __init__(self, *args, **kwargs):
-        super(ExamnumberSerializer, self).__init__(*args, **kwargs)
-        request = self.context.get('request')
-        if request and request.method == 'POST':
-            self.Meta.depth = 0
-        else:
-            self.Meta.depth = 3
-
 class ExamSerializer(serializers.ModelSerializer):
-    comment = CommentSerializer(many=True, read_only=True)
-    examnumber = ExamnumberSerializer(many=True, required=False)
-    mainsubject = ExplanationSerializer(many=True, required=False)
-    
+    comment      = CommentSerializer(many=True, read_only=True)
+    examnumber   = ExamnumberSerializer(source="examnumber_set", many=True, read_only=True)
+    mainsubject  = MainsubjectSerializer(source="mainsubject_set", many=True, read_only=True)
+
     class Meta:
         model = Exam
         fields = "__all__"
@@ -230,6 +272,51 @@ class ExamSerializer(serializers.ModelSerializer):
             self.Meta.depth = 0
         else:
             self.Meta.depth = 3
+
+    def validate(self, attrs):
+        # instance가 있는 경우 기존 값 보정
+        examtype  = attrs.get("examtype",  getattr(self.instance, "examtype",  None))
+        ragent    = attrs.get("ragent",    getattr(self.instance, "ragent",    None))
+        rposition = attrs.get("rposition", getattr(self.instance, "rposition", None))
+        rgroup    = attrs.get("rgroup",    getattr(self.instance, "rgroup",    None))
+
+        if examtype == "Public":
+            # ragent 필수
+            if not ragent:
+                raise serializers.ValidationError({"ragent": "공무원 시험은 채용기관(Ragent)을 반드시 선택해야 합니다."})
+
+            # rposition 필수 여부 & 허용 목록
+            if ragent in Exam.RAGENT_NEED_POSITION:
+                if not rposition:
+                    raise serializers.ValidationError({"rposition": f"{ragent}은(는) 직급(Rposition)을 반드시 선택해야 합니다."})
+                allowed = set(Exam._RPOSITION_MAP.get(ragent, []))
+                if rposition not in allowed:
+                    raise serializers.ValidationError({"rposition": f"{ragent}에서는 {sorted(allowed)} 중 하나를 선택해야 합니다."})
+            else:
+                # 불필수군(지역인재/계리직/간호직/비상대비)
+                pass
+
+            # rgroup 필수 여부
+            if ragent in Exam.RAGENT_NEED_RGROUP and not rgroup:
+                raise serializers.ValidationError({"rgroup": f"{ragent}은(는) 직류(Rgroup)를 반드시 입력해야 합니다."})
+        else:
+            # 공무원 아닌 경우: 굳이 채워져 있어도 허용(원하면 비우도록 강제 가능)
+            pass
+
+        return attrs
+
+    def create(self, validated_data):
+        # model.clean()도 호출해 두면 admin 외 경로에서도 이중 안전장치
+        obj = super().create(validated_data)
+        obj.full_clean()
+        obj.save()
+        return obj
+
+    def update(self, instance, validated_data):
+        obj = super().update(instance, validated_data)
+        obj.full_clean()
+        obj.save()
+        return obj
 
 #######################에세이#######################
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Card } from 'antd';
+import { Typography, Card, message } from 'antd';
 import AxiosInstance from './AxiosInstance';
 import StudyWriteExam from './StudyWriteExam';
 import StudyWriteExamnumber from './StudyWriteExamnumber';
@@ -9,6 +9,13 @@ import StudyWriteDetailsubject from './StudyWriteDetailsubject';
 import StudyWriteExplanation from './StudyWriteExplanation';
 
 const { Title } = Typography;
+
+// 배열/페이징 응답 정규화
+const asArray = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.results)) return payload.results;
+  return [];
+};
 
 const StudyWrite = () => {
   const [examList, setExamList] = useState([]);
@@ -21,55 +28,61 @@ const StudyWrite = () => {
   // 데이터 가져오기
   const fetchExams = async () => {
     try {
-      const response = await AxiosInstance.get('exam/');
-      setExamList(response.data.results || response.data);
+      const res = await AxiosInstance.get('exam/');
+      setExamList(asArray(res.data));
     } catch (error) {
       console.error('Exam 데이터 가져오기 오류:', error);
+      message.error('시험명 목록을 불러오지 못했습니다.');
     }
   };
 
   const fetchExamNumbers = async () => {
     try {
-      const response = await AxiosInstance.get('examnumber/');
-      setExamNumberList(response.data.results || response.data);
+      const res = await AxiosInstance.get('examnumber/');
+      setExamNumberList(asArray(res.data));
     } catch (error) {
       console.error('ExamNumber 데이터 가져오기 오류:', error);
+      message.error('시험회차 목록을 불러오지 못했습니다.');
     }
   };
 
   const fetchQuestions = async () => {
     try {
-      const response = await AxiosInstance.get('question/');
-      setQuestionList(response.data.results || response.data);
+      const res = await AxiosInstance.get('question/');
+      setQuestionList(asArray(res.data));
     } catch (error) {
       console.error('Question 데이터 가져오기 오류:', error);
+      message.error('문항 목록을 불러오지 못했습니다.');
     }
   };
 
   const fetchMainSubjects = async () => {
     try {
-      const response = await AxiosInstance.get('mainsubject/');
-      setMainsubjectList(response.data.results || response.data);
+      const res = await AxiosInstance.get('mainsubject/');
+      setMainsubjectList(asArray(res.data));
     } catch (error) {
       console.error('MainSubject 데이터 가져오기 오류:', error);
+      message.error('주요과목 목록을 불러오지 못했습니다.');
     }
   };
 
   const fetchDetailSubjects = async () => {
     try {
-      const response = await AxiosInstance.get('detailsubject/');
-      setDetailsubjectList(response.data.results || response.data);
+      const res = await AxiosInstance.get('detailsubject/');
+      setDetailsubjectList(asArray(res.data));
     } catch (error) {
       console.error('DetailSubject 데이터 가져오기 오류:', error);
+      message.error('세부과목 목록을 불러오지 못했습니다.');
     }
   };
 
   const fetchExplanations = async () => {
     try {
-      const response = await AxiosInstance.get('explanation/');
-      setExplanationList(response.data.results || response.data);
+      const res = await AxiosInstance.get('explanation/');
+      setExplanationList(asArray(res.data));
     } catch (error) {
       console.error('Explanation 데이터 가져오기 오류:', error);
+      message.error('해설 목록을 불러오지 못했습니다.');
     }
   };
 
@@ -90,7 +103,7 @@ const StudyWrite = () => {
       </Title>
 
       {/* 상단 - Explanation */}
-      <Card style={{ marginBottom: '2rem', padding: '0' }}>
+      <Card style={{ marginBottom: '2rem', padding: 0 }}>
         <StudyWriteExplanation
           examList={examList}
           examNumberList={examNumberList}
@@ -98,7 +111,7 @@ const StudyWrite = () => {
           detailsubjectList={detailsubjectList}
           questionList={questionList}
           onRefresh={fetchExplanations}
-          style={{ padding: '0' }}
+          style={{ padding: 0 }}
         />
       </Card>
 
@@ -119,8 +132,10 @@ const StudyWrite = () => {
             examList={examList}
             examNumberList={examNumberList}
             onQuestionAdd={(newQuestion) => {
-              setQuestionList((prev) => [...prev, newQuestion]); // 즉시 반영
-              fetchExplanations(); // Explanation 쪽도 같이 새로고침
+              // 즉시 반영(자식에서 정규화된 객체가 넘어온다는 가정)
+              setQuestionList((prev) => [...prev, newQuestion]);
+              // Explanation도 함께 갱신
+              fetchExplanations();
             }}
           />
         </Card>
@@ -129,10 +144,7 @@ const StudyWrite = () => {
       {/* 주요과목 / 세부과목 (1:1 비율, gap 1rem) */}
       <div style={{ display: 'flex', gap: '1rem' }}>
         <Card style={{ flex: 1 }}>
-          <StudyWriteMainsubject
-            examList={examList}
-            onMainsubjectAdd={fetchMainSubjects}
-          />
+          <StudyWriteMainsubject examList={examList} onMainsubjectAdd={fetchMainSubjects} />
         </Card>
         <Card style={{ flex: 1 }}>
           <StudyWriteDetailsubject

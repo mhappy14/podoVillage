@@ -147,10 +147,11 @@ class CreateExamnumberViewset(viewsets.ModelViewSet):
 
 # 3 문제Question(번호questionnumber1 - 번호questionnumber2 - 문제questiontext - 좋아요 - 북마크 - 날짜)
 class CreateQuestionViewset(viewsets.ModelViewSet):
-	queryset = Question.objects.all()
+	queryset = Question.objects.all().select_related("exam", "examnumber").prefetch_related("options")
 	serializer_class = QuestionSerializer
 	permission_classes = [permissions.AllowAny]
 
+	@transaction.atomic
 	def perform_create(self, serializer):
 		serializer.save()
 
@@ -158,17 +159,17 @@ class CreateQuestionViewset(viewsets.ModelViewSet):
 	def check_question(self, request):
 			exam_id = request.query_params.get('exam')
 			examnumber_id = request.query_params.get('examnumber')
-			questionnumber1 = request.query_params.get('questionnumber1')
-			questionnumber2 = request.query_params.get('questionnumber2')
+			qsubject = request.query_params.get('qsubject')
+			qnumber = request.query_params.get('qnumber')
 
-			if not all([exam_id, examnumber_id, questionnumber1, questionnumber2]):
-					return Response({"error": "exam, examnumber, questionnumber1, and questionnumber2 are required."}, status=400)
+			if not all([exam_id, examnumber_id, qsubject, qnumber]):
+					return Response({"error": "exam, examnumber, qsubject, and qnumber are required."}, status=400)
 
 			exists = Question.objects.filter(
 					exam_id=exam_id,
 					examnumber_id=examnumber_id,
-					questionnumber1=questionnumber1,
-					questionnumber2=questionnumber2
+					qsubject=qsubject,
+					qnumber=qnumber
 			).exists()
 
 			return Response({"exists": exists}, status=200)

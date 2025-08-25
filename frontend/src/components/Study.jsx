@@ -31,8 +31,9 @@ const Study = () => {
 
   // ===== 필터링 =====
   const filteredExplanations = useMemo(() => {
-    if (!Array.isArray(explanations)) return []; 
+    if (!Array.isArray(explanations)) return [];
     let filtered = explanations;
+
     if (selectedExam) {
       filtered = filtered.filter((item) => item?.exam?.examname === selectedExam);
     }
@@ -40,7 +41,8 @@ const Study = () => {
       filtered = filtered.filter((item) => item?.examnumber?.examnumber === Number(selectedExamNumber));
     }
     if (selectedQuestionNumber) {
-      filtered = filtered.filter((item) => item?.question?.questionnumber1 === Number(selectedQuestionNumber));
+      // Question의 1차 번호가 qsubject로 변경됨
+      filtered = filtered.filter((item) => item?.question?.qsubject === Number(selectedQuestionNumber));
     }
     return filtered;
   }, [explanations, selectedExam, selectedExamNumber, selectedQuestionNumber]);
@@ -79,7 +81,8 @@ const Study = () => {
 
   const questionOptions = [
     { value: '', label: '전체' },
-    ...Array.from(new Set(safe.map((it) => it?.question?.questionnumber1).filter((v) => v !== null && v !== undefined))).map((q) => ({
+    // Question의 1차 번호는 qsubject로 변경
+    ...Array.from(new Set(safe.map((it) => it?.question?.qsubject).filter((v) => v !== null && v !== undefined))).map((q) => ({
       value: q, label: q,
     })),
   ];
@@ -96,6 +99,7 @@ const Study = () => {
             style={{ width: '100%' }}
             options={examOptions}
             placeholder="시험명을 선택하세요"
+            allowClear
           />
         </div>
 
@@ -107,6 +111,7 @@ const Study = () => {
             style={{ width: '100%' }}
             options={examNumberOptions}
             placeholder="시험회차를 선택하세요"
+            allowClear
           />
         </div>
 
@@ -119,6 +124,7 @@ const Study = () => {
             options={questionOptions}
             placeholder={selectedExam ? '과목번호를 선택하세요' : '시험회차를 먼저 선택해주세요.'}
             disabled={!selectedExam}
+            allowClear
           />
         </div>
       </Flex>
@@ -136,11 +142,11 @@ const Study = () => {
                     <strong>{item?.exam?.examname ?? '-'}</strong>
                   </div>
                   <div style={{ width: '15%' }}>
-                    {item?.examnumber?.year ?? '-'}년 {item?.examnumber?.examnumber ?? '-'}회 Q
-                    {item?.question?.questionnumber1 ?? '-'}-{item?.question?.questionnumber2 ?? '-'}.
+                    {item?.examnumber?.year ?? '-'}년 {item?.examnumber?.examnumber ?? '-'}회 {item?.question?.qsubject ?? '-'}-{item?.question?.qnumber ?? '-'}
                   </div>
-                  <div style={{ width: '65%' }}>{item?.question?.questiontext ?? ''}</div>
-                  <div style={{ width: '10%', textAlign: 'right' }}>좋아요: {item?.like?.length ?? 0}개</div>
+                  <div style={{ width: '65%' }}>{item?.question?.qtext ?? ''}</div>
+                  {/* like_count로 변경 (M2M 배열 길이 아님) */}
+                  <div style={{ width: '10%', textAlign: 'right' }}>좋아요: {item?.like_count ?? 0}개</div>
                 </Flex>
               </Card>
             </Link>
