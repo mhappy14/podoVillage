@@ -137,6 +137,26 @@ const StudyWriteExplanation = ({
     }
   };
 
+  // 시험명 렌더링(공무원일 때 가독성)
+  const renderExamLabel = (exam) =>
+    exam?.examtype === 'Public'
+      ? `${exam?.ragent ?? ''} ${exam?.rposition ?? ''} ${exam?.examname ?? ''}`
+      : exam?.examname;
+
+  // 문항 표시: slug(있으면) / 없으면 "n회 [과목slug]. qnumber. text"
+  const renderQuestionLabel = (q) => {
+    if (q?.slug) return q.slug;
+    const n = q?.examnumber?.examnumber ?? '-';
+    const subj =
+      q?.examqsubject?.slug ??
+      (q?.examqsubject
+        ? `${q?.examqsubject?.esn ?? ''}. ${q?.examqsubject?.est ?? ''}`
+        : '-');
+    const num = q?.qnumber ?? '-';
+    const text = q?.qtext ?? '';
+    return `${n}회 ${subj} ${num}. ${text}`;
+  };
+
   return (
     <div style={{ margin: '0 1rem 0 1rem' }}>
       <Typography.Title level={5} style={{ margin: 0 }}>
@@ -162,7 +182,7 @@ const StudyWriteExplanation = ({
               >
                 {exams.map((exam) => (
                   <Option key={exam?.id} value={exam?.id}>
-                    {exam?.examname}
+                    {renderExamLabel(exam)}
                   </Option>
                 ))}
               </Select>
@@ -203,8 +223,7 @@ const StudyWriteExplanation = ({
               >
                 {filteredQuestionList.map((q) => (
                   <Option key={q?.id} value={q?.id}>
-                    {/* slug 생성 규칙 유지: "n회 s-n. text" 형식이면 그대로 표시 */}
-                    {q?.slug ?? `${q?.examnumber?.examnumber ?? '-'}회 ${q?.qsubject ?? '-'}-${q?.qnumber ?? '-'}. ${q?.qtext ?? ''}`}
+                    {renderQuestionLabel(q)}
                   </Option>
                 ))}
               </Select>

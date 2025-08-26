@@ -125,7 +125,7 @@ const Home = () => {
                     <Link to={`/study/view/${item?.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                         <Typography sx={{ width: '80%' }} variant="subtitle1">
-                          <strong>{item?.question?.questiontext ?? '(제목 없음)'}</strong><br />
+                          <strong>{item?.question?.qtext ?? '(제목 없음)'}</strong><br />
                           {item?.exam?.examname ?? ''} {item?.examnumber?.year ?? ''}년 {item?.examnumber?.examnumber ?? ''}
                           회 {item?.question?.questionnumber1 ?? ''}과목 {item?.question?.questionnumber2 ?? ''}문항
                         </Typography>

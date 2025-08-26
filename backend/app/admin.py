@@ -4,6 +4,7 @@ from .models import *
 admin.site.register(CustomUser)
 admin.site.register(Exam)
 admin.site.register(Examnumber)
+admin.site.register(ExamQsubject)
 admin.site.register(Question)
 admin.site.register(Mainsubject)
 admin.site.register(Detailsubject)

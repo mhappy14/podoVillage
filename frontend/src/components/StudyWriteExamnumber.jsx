@@ -110,13 +110,15 @@ const StudyWriteExamnumber = ({ examList, onExamNumberAdd }) => {
           >
             {exams.map((exam) => (
               <Option key={exam?.id} value={exam?.id}>
-                {exam?.examname}
+                {exam?.examtype === 'Public'
+                  ? `${exam?.ragent ?? ''} ${exam?.rposition ?? ''} ${exam?.examname ?? ''}`
+                  : exam?.examname}
               </Option>
             ))}
           </Select>
         </Form.Item>
 
-        <Form.Item label="시험 회차 번호" required>
+        <Form.Item label="시험 회차 번호(연1회 시행 시 1입력)" required>
           <Input
             placeholder={selectedExam ? '시험 회차 번호(자연수만 입력 가능)' : '시험명을 먼저 선택해주세요.'}
             value={examNumber}

@@ -188,10 +188,34 @@ class OptionSerializer(serializers.ModelSerializer):
         model = Option
         fields = ("id", "order", "text", "is_correct", "is_active")
 
+class ExamQsubjectSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExamQsubject
+        fields = ("id", "exam", "examstage", "esn", "est", "slug")
+
+    def validate(self, attrs):
+        # ExamQsubject 모델의 clean 로직(자격증이면 examstage 필수)을 보조 검증
+        exam = attrs.get("exam", getattr(self.instance, "exam", None))
+        examstage = attrs.get("examstage", getattr(self.instance, "examstage", None))
+
+        if exam and getattr(exam, "examtype", None) == "License":
+            if not examstage:
+                raise serializers.ValidationError({"examstage": "자격증 시험은 시험단계(examstage)가 반드시 필요합니다."})
+        else:
+            # License가 아닌 경우 자동 None 강제는 모델 clean/save에서 처리
+            pass
+        return attrs
+
 class QuestionSerializer(serializers.ModelSerializer):
     options = OptionSerializer(many=True, required=False)
     explanation = ExplanationSerializer(source="explanation_set", many=True, read_only=True)
     comment = serializers.SerializerMethodField(read_only=True)
+    examqsubject = ExamQsubjectSerializer(read_only=True)
+    examqsubject_id = serializers.PrimaryKeyRelatedField(
+        queryset=ExamQsubject.objects.all(),
+        write_only=True,
+        source="examqsubject"
+    )
 
     def get_comment(self, obj):
         qs = Comment.objects.filter(explanation__question=obj)
@@ -201,6 +225,7 @@ class QuestionSerializer(serializers.ModelSerializer):
         model = Question
         fields = "__all__"
 
+    # ------- 내부 유틸: 객관식 보기 규칙 -------
     def _validate_mc_rules_payload(self, qtype, options_payload):
         if qtype != "Oj":
             return
@@ -212,9 +237,22 @@ class QuestionSerializer(serializers.ModelSerializer):
             raise ValidationError("객관식/TF 문항은 정답이 최소 1개 필요합니다.")
 
     def validate(self, attrs):
+        # qtype & options 규칙
         qtype = attrs.get("qtype", getattr(self.instance, "qtype", None))
         options_payload = self.initial_data.get("options", []) or []
         self._validate_mc_rules_payload(qtype, options_payload)
+
+        # 관계 정합성: exam / examnumber / examqsubject가 서로 같은 시험 소속인지 검증
+        exam = attrs.get("exam", getattr(self.instance, "exam", None))
+        examnumber = attrs.get("examnumber", getattr(self.instance, "examnumber", None))
+        examqsubject = attrs.get("examqsubject", getattr(self.instance, "examqsubject", None))
+
+        if exam and examnumber and examnumber.exam_id != exam.id:
+            raise serializers.ValidationError({"examnumber": "선택한 회차(Examnumber)는 선택한 시험(Exam)과 다릅니다."})
+
+        if exam and examqsubject and examqsubject.exam_id != exam.id:
+            raise serializers.ValidationError({"examqsubject": "선택한 과목(ExamQsubject)은 선택한 시험(Exam)과 다릅니다."})
+
         return attrs
 
     def create(self, validated_data):
@@ -281,32 +319,21 @@ class ExamSerializer(serializers.ModelSerializer):
         rgroup    = attrs.get("rgroup",    getattr(self.instance, "rgroup",    None))
 
         if examtype == "Public":
-            # ragent 필수
             if not ragent:
                 raise serializers.ValidationError({"ragent": "공무원 시험은 채용기관(Ragent)을 반드시 선택해야 합니다."})
 
-            # rposition 필수 여부 & 허용 목록
             if ragent in Exam.RAGENT_NEED_POSITION:
                 if not rposition:
                     raise serializers.ValidationError({"rposition": f"{ragent}은(는) 직급(Rposition)을 반드시 선택해야 합니다."})
                 allowed = set(Exam._RPOSITION_MAP.get(ragent, []))
                 if rposition not in allowed:
                     raise serializers.ValidationError({"rposition": f"{ragent}에서는 {sorted(allowed)} 중 하나를 선택해야 합니다."})
-            else:
-                # 불필수군(지역인재/계리직/간호직/비상대비)
-                pass
 
-            # rgroup 필수 여부
             if ragent in Exam.RAGENT_NEED_RGROUP and not rgroup:
                 raise serializers.ValidationError({"rgroup": f"{ragent}은(는) 직류(Rgroup)를 반드시 입력해야 합니다."})
-        else:
-            # 공무원 아닌 경우: 굳이 채워져 있어도 허용(원하면 비우도록 강제 가능)
-            pass
-
         return attrs
 
     def create(self, validated_data):
-        # model.clean()도 호출해 두면 admin 외 경로에서도 이중 안전장치
         obj = super().create(validated_data)
         obj.full_clean()
         obj.save()

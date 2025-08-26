@@ -3,6 +3,7 @@ import { Typography, Card, message } from 'antd';
 import AxiosInstance from './AxiosInstance';
 import StudyWriteExam from './StudyWriteExam';
 import StudyWriteExamnumber from './StudyWriteExamnumber';
+import StudyWriteExamQsubject from './StudyWriteExamQsubject';
 import StudyWriteQuestion from './StudyWriteQuestion';
 import StudyWriteMainsubject from './StudyWriteMainsubject';
 import StudyWriteDetailsubject from './StudyWriteDetailsubject';
@@ -20,6 +21,7 @@ const asArray = (payload) => {
 const StudyWrite = () => {
   const [examList, setExamList] = useState([]);
   const [examNumberList, setExamNumberList] = useState([]);
+  const [examQsubjectList, setExamQsubjectList] = useState([]);
   const [questionList, setQuestionList] = useState([]);
   const [mainsubjectList, setMainsubjectList] = useState([]);
   const [detailsubjectList, setDetailsubjectList] = useState([]);
@@ -43,6 +45,16 @@ const StudyWrite = () => {
     } catch (error) {
       console.error('ExamNumber 데이터 가져오기 오류:', error);
       message.error('시험회차 목록을 불러오지 못했습니다.');
+    }
+  };
+
+  const fetchExamQsubjects = async () => {
+    try {
+      const res = await AxiosInstance.get('examqsubject/');
+      setExamQsubjectList(asArray(res.data));
+    } catch (error) {
+      console.error('ExamQsubject 데이터 가져오기 오류:', error);
+      message.error('시험 과목 목록을 불러오지 못했습니다.');
     }
   };
 
@@ -90,6 +102,7 @@ const StudyWrite = () => {
   useEffect(() => {
     fetchExams();
     fetchExamNumbers();
+    fetchExamQsubjects();
     fetchQuestions();
     fetchMainSubjects();
     fetchDetailSubjects();
@@ -115,6 +128,20 @@ const StudyWrite = () => {
         />
       </Card>
 
+      <Card style={{ flex: 1, marginBottom: '1rem' }}>
+        <StudyWriteQuestion
+          examList={examList}
+          examNumberList={examNumberList}
+          examQsubjectList={examQsubjectList}
+          onQuestionAdd={(newQuestion) => {
+            // 즉시 반영(자식에서 정규화된 객체가 넘어온다는 가정)
+            setQuestionList((prev) => [...prev, newQuestion]);
+            // Explanation도 함께 갱신
+            fetchExplanations();
+          }}
+        />
+      </Card>
+
       {/* 시험명 / 시험회차 / 문항 (1:1:1 비율, gap 1rem) */}
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
         <Card style={{ flex: 1 }}>
@@ -128,14 +155,12 @@ const StudyWrite = () => {
           />
         </Card>
         <Card style={{ flex: 1 }}>
-          <StudyWriteQuestion
+          <StudyWriteExamQsubject
             examList={examList}
-            examNumberList={examNumberList}
-            onQuestionAdd={(newQuestion) => {
-              // 즉시 반영(자식에서 정규화된 객체가 넘어온다는 가정)
-              setQuestionList((prev) => [...prev, newQuestion]);
-              // Explanation도 함께 갱신
-              fetchExplanations();
+            onQsubjectAdd={(newItem) => {
+              setExamQsubjectList((prev) => [newItem, ...prev]);
+              fetchExamQsubjects();
+              fetchQuestions();
             }}
           />
         </Card>

@@ -16,6 +16,7 @@ from django.utils.text import slugify
 from shortuuid.django_fields import ShortUUIDField, ShortUUID
 import bleach
 from django.utils import timezone
+from uuid import uuid4
 
 class CustomUserManager(BaseUserManager): 
 		
@@ -65,7 +66,7 @@ class Exam(models.Model):
         ("Other",   "기타"),
     )
 
-    # 채용기관 (공무원일 때만 사용)
+    # Recruit Agent (공무원일 때만 사용)
     RAGENT = (
         ("국가직", "국가직"),
         ("지방직", "지방직"),
@@ -83,7 +84,7 @@ class Exam(models.Model):
         ("비상대비", "비상대비"),
     )
 
-    # Ragent별 허용 직급(옵션) 맵
+    # Recruit Agent Position 옵션 맵
     _RPOSITION_MAP = {
         "국가직": ["5급", "5급경력", "5급승진", "7급", "9급"],
         "지방직": ["7급", "9급"],
@@ -171,7 +172,7 @@ class Examnumber(models.Model):
 	exam = models.ForeignKey(Exam, on_delete=models.SET_NULL, null=True)
 	examnumber = models.PositiveIntegerField(null=False, default=1)
 	year = models.PositiveIntegerField(null=False)
-	slug = models.SlugField(unique=True, null=True, blank=True)
+	slug = models.SlugField(unique=True, null=True, blank=True, max_length=255, allow_unicode=True)
     
 	def __str__(self):
 		return str(self.examnumber)
@@ -179,53 +180,113 @@ class Examnumber(models.Model):
 	def save(self, *args, **kwargs):
 		if not self.slug:  # slug가 비어 있을 때만 생성
 			# exam.examname과 examnumber를 결합하여 slug를 생성
-			combined_value = f"{self.exam.examname}({self.examnumber}회, {self.year})"
+			combined_value = f"{self.exam.ragent} {self.exam.rposition} {self.exam.examname}({self.year}, {self.examnumber}회)"
 			self.slug = combined_value
 		super(Examnumber, self).save(*args, **kwargs)
-    
-	def questions(self):
-		return Question.objects.filter(examnumber=self).order_by("qsubject", "qnumber")
 
 	class Meta:
 			unique_together = ('exam', 'examnumber')  # 복합 유일성 제약 조건
 
+class ExamQsubject(models.Model):
+    TYPE = (
+        ("1st", "1차"),
+        ("2nd", "2차"),
+        ("3rd", "3차"),
+    )
+
+    exam = models.ForeignKey(Exam, on_delete=models.SET_NULL, null=True)
+    examstage = models.CharField(max_length=3, choices=TYPE, blank=True, null=True)
+    esn = models.PositiveIntegerField()  # 과목번호
+    est = models.CharField(blank=True, max_length=200)  # 과목명
+    slug = models.SlugField(max_length=255, blank=True, allow_unicode=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['exam', 'esn'], name='uniq_exam_esn'),
+            models.UniqueConstraint(fields=['exam', 'est'], name='uniq_exam_est'),
+        ]
+        ordering = ['exam_id', 'esn']
+
+    def clean(self):
+        if self.exam and self.exam.examtype == "License":
+            if not self.examstage:
+                raise ValidationError("자격증 시험은 시험단계(examstage)가 반드시 필요합니다.")
+        # ✅ "기술사"가 아닌 시험은 과목명 필수
+        if self.exam and "기술사" not in (self.exam.examname or ""):
+            if not self.est:
+                raise ValidationError("과목명(est)은 반드시 입력해야 합니다.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        if not self.slug:
+            base = f"{self.esn}-{self.est}" 
+            self.slug = slugify(base, allow_unicode=True)[:255]
+        super().save(*args, **kwargs)
+
 class Question(models.Model):
-	TYPE = (
-			("Sj", "주관식"), 
-			("Oj", "객관식"),
-	)
+  TYPE = (
+          ("Sj", "주관식"), 
+          ("Oj", "객관식"),
+  )
 
-	exam = models.ForeignKey(Exam, on_delete=models.SET_NULL, null=True)
-	examnumber = models.ForeignKey(Examnumber, on_delete=models.SET_NULL, null=True)
-	qtype = models.CharField(max_length=2, choices=TYPE, default="Sj")
-	qsubject = models.PositiveIntegerField(null=True)
-	qnumber = models.PositiveIntegerField(null=True)
-	qtext = models.CharField(max_length=1000)
-	slug = models.SlugField(unique=True, null=True, blank=True, max_length=200)
-    
-	def __str__(self):
-		return  f"{self.qsubject} - {self.qnumber} - {self.qtext}"
+  exam = models.ForeignKey(Exam, on_delete=models.SET_NULL, null=True)
+  examnumber = models.ForeignKey(Examnumber, on_delete=models.SET_NULL, null=True)
+  examqsubject = models.ForeignKey(ExamQsubject, on_delete=models.SET_NULL, null=True)
+  qtype = models.CharField(max_length=2, choices=TYPE, default="Sj")
+  qnumber = models.PositiveIntegerField(null=True)
+  qtext = models.CharField(max_length=1000)
+  qscript = models.CharField(blank=True, null=True, max_length=1000)
+  slug = models.SlugField(unique=True, null=True, blank=True, max_length=200, allow_unicode=True)
 
-	def clean(self):
-		# 주관식이면 보기 없어도 됨
-		if self.qtype == "Sj":
-				return
+  def __str__(self):
+    examnum = getattr(self.examnumber, "examnumber", None)
+    if self.examqsubject:
+      subj_label = self.examqsubject.slug or f"{self.examqsubject.esn}. {self.examqsubject.est}"
+    else:
+      subj_label = "(과목없음)"
+    num = self.qnumber if self.qnumber is not None else "?"
+    parts = []
+    if examnum is not None:
+      parts.append(f"{examnum}회")
+    parts.append(subj_label)
+    parts.append(str(num))
+    return " ".join(parts)
 
-		# 객관식, 최소 2개 보기 권장 & 정답 최소 1개
-		opts = list(self.options.all()) if self.pk else []
-		if self.qtype == "Oj":
-			# 저장 직전 clean은 옵션이 아직 저장 안됐을 수도 있으므로,
-			# 실제 검증은 Serializer/폼에서도 한번 수행하는 것을 권장
-			pass
+  def clean(self):
+    if self.examnumber and self.exam and self.examnumber.exam_id != self.exam.id:
+      raise ValidationError({"examnumber": "선택한 회차(Examnumber)는 선택한 시험(Exam)과 다릅니다."})
+    if self.examqsubject and self.exam and self.examqsubject.exam_id != self.exam.id:
+      raise ValidationError({"examqsubject": "선택한 과목(ExamQsubject)은 선택한 시험(Exam)과 다릅니다."})
 
-	def save(self, *args, **kwargs):
-		if not self.slug:
-			combined_value = f"{self.examnumber.examnumber}회 {self.qsubject}-{self.qnumber}. {self.qtext}"
-			self.slug = combined_value
-		super(Question, self).save(*args, **kwargs)
-    
-	def explanations(self):
-		return Explanation.objects.filter(question=self).annotate(like_count=Count('like')).order_by('-like_count')
+  def save(self, *args, **kwargs):
+    self.clean()
+    if not self.slug:
+        examnum = getattr(self.examnumber, "examnumber", None)
+        subj_label = None
+        if self.examqsubject:
+            subj_label = self.examqsubject.slug or f"{self.examqsubject.esn}. {self.examqsubject.est}"
+        if examnum is not None and subj_label and self.qnumber is not None and self.qtext:
+            base = f"{examnum}회 {subj_label} {self.qnumber} {self.qtext}"
+            self.slug = slugify(base, allow_unicode=True)[:200] or None
+    if not self.slug:
+        self.slug = f"q-{uuid4().hex[:16]}"
+    super().save(*args, **kwargs)
+
+  def explanations(self):
+    return (
+      Explanation.objects
+      .filter(question=self)
+      .annotate(like_count=Count('like'))
+      .order_by('-like_count')
+    )
+
+  class Meta:
+    constraints = [
+      models.UniqueConstraint(
+        fields=['exam', 'examnumber', 'examqsubject', 'qnumber'],
+        name='uniq_question_scope'
+      )
+    ]
 
 class Option(models.Model):
 	"""객관식 보기. 개수 가변, 정답 복수 허용 가능."""

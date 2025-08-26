@@ -179,7 +179,7 @@ const StudyWriteExam = ({ examList, onExamAdd }) => {
   };
 
   return (
-    <div style={{ margin: '0 0 0 1rem' }}>
+    <div style={{ margin: '0 0 0 0' }}>
       <Title level={5}>Exam</Title>
       <Form onFinish={handleExamSubmit} layout="vertical" disabled={loading}>
 

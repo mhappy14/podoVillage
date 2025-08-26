@@ -15,11 +15,13 @@ const asArray = (payload) => {
 const StudyWriteQuestion = ({ examList, examNumberList, onQuestionAdd }) => {
   const [selectedExam, setSelectedExam] = useState('');
   const [selectedExamNumber, setSelectedExamNumber] = useState('');
-  const [qsubject, setQsubject] = useState(''); // 1차 번호
-  const [qnumber, setQnumber] = useState('');   // 문항 번호
+  const [selectedQsubject, setSelectedQsubject] = useState(''); // ExamQsubject id
+  const [qnumber, setQnumber] = useState('');                    // 문항 번호
   const [qtext, setQtext] = useState('');
   const [isDuplicate, setIsDuplicate] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const [qsubjectsCache, setQsubjectsCache] = useState([]);      // 현재 시험의 ExamQsubject 목록
 
   const exams = useMemo(() => asArray(examList), [examList]);
   const examNumbers = useMemo(() => asArray(examNumberList), [examNumberList]);
@@ -32,17 +34,38 @@ const StudyWriteQuestion = ({ examList, examNumberList, onQuestionAdd }) => {
     return examNumbers.filter((en) => Number(examIdOf(en)) === sel);
   }, [selectedExam, examNumbers]);
 
-  // 시험 변경 시 의존값 초기화
+  // 선택된 시험에 따라 과목(ExamQsubject) 목록 가져오기
   useEffect(() => {
     setSelectedExamNumber('');
-    setQsubject('');
+    setSelectedQsubject('');
     setQnumber('');
     setQtext('');
     setIsDuplicate(false);
+
+    if (!selectedExam) {
+      setQsubjectsCache([]);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      try {
+        // 서버에서 exam 필터가 지원되면 아래 params 사용
+        const res = await AxiosInstance.get('examqsubject/', {
+          // params: { exam: selectedExam }
+        });
+        const rows = asArray(res.data).filter((r) => String(r.exam) === String(selectedExam));
+        if (!alive) return;
+        setQsubjectsCache(rows);
+      } catch (e) {
+        if (!alive) return;
+        setQsubjectsCache([]);
+      }
+    })();
+    return () => { alive = false; };
   }, [selectedExam]);
 
-  const checkDuplicate = async (nextQsubject, nextQnumber) => {
-    if (!selectedExam || !selectedExamNumber || !nextQsubject || !nextQnumber) {
+  const checkDuplicate = async (examqsubjectId, nextQnumber) => {
+    if (!selectedExam || !selectedExamNumber || !examqsubjectId || !nextQnumber) {
       setIsDuplicate(false);
       return;
     }
@@ -51,7 +74,7 @@ const StudyWriteQuestion = ({ examList, examNumberList, onQuestionAdd }) => {
         params: {
           exam: selectedExam,
           examnumber: selectedExamNumber,
-          qsubject: nextQsubject,
+          examqsubject: examqsubjectId,
           qnumber: nextQnumber,
         },
       });
@@ -62,22 +85,15 @@ const StudyWriteQuestion = ({ examList, examNumberList, onQuestionAdd }) => {
     }
   };
 
-  const handleNumberChange = (key, rawValue) => {
-    // 자연수만 허용, 빈값 허용
+  const handleQnumberChange = (rawValue) => {
     const v = rawValue.trim();
-    if (!/^[1-9]\d*$/.test(v) && v !== '') return;
-
-    if (key === 'qsubject') {
-      setQsubject(v);
-      checkDuplicate(v, qnumber);
-    } else if (key === 'qnumber') {
-      setQnumber(v);
-      checkDuplicate(qsubject, v);
-    }
+    if (!/^[1-9]\d*$/.test(v) && v !== '') return; // 자연수만 허용
+    setQnumber(v);
+    checkDuplicate(selectedQsubject, v);
   };
 
   const handleSubmit = async () => {
-    if (!selectedExam || !selectedExamNumber || !qsubject || !qnumber || !qtext.trim()) {
+    if (!selectedExam || !selectedExamNumber || !selectedQsubject || !qnumber || !qtext.trim()) {
       message.error('모든 필드를 입력해 주세요.');
       return;
     }
@@ -91,7 +107,7 @@ const StudyWriteQuestion = ({ examList, examNumberList, onQuestionAdd }) => {
       const response = await AxiosInstance.post('question/', {
         exam: selectedExam,
         examnumber: selectedExamNumber,
-        qsubject: Number(qsubject),
+        examqsubject: selectedQsubject,     // ✔ 과목은 ExamQsubject ID로 전송
         qnumber: Number(qnumber),
         qtext: qtext.trim(),
       });
@@ -102,7 +118,7 @@ const StudyWriteQuestion = ({ examList, examNumberList, onQuestionAdd }) => {
       // 초기화
       setSelectedExam('');
       setSelectedExamNumber('');
-      setQsubject('');
+      setSelectedQsubject('');
       setQnumber('');
       setQtext('');
       setIsDuplicate(false);
@@ -119,9 +135,10 @@ const StudyWriteQuestion = ({ examList, examNumberList, onQuestionAdd }) => {
   };
 
   return (
-    <div style={{ maxWidth: 600 }}>
+    <div>
       <Typography.Title level={5}>Question</Typography.Title>
       <Form layout="vertical" onFinish={handleSubmit} disabled={loading}>
+
         {/* 시험명 */}
         <Form.Item label="시험명" required>
           <Select
@@ -132,7 +149,9 @@ const StudyWriteQuestion = ({ examList, examNumberList, onQuestionAdd }) => {
           >
             {exams.map((exam) => (
               <Option key={exam?.id} value={exam?.id}>
-                {exam?.examname}
+                {exam?.examtype === 'Public'
+                  ? `${exam?.ragent ?? ''} ${exam?.rposition ?? ''} ${exam?.examname ?? ''}`
+                  : exam?.examname}
               </Option>
             ))}
           </Select>
@@ -145,7 +164,7 @@ const StudyWriteQuestion = ({ examList, examNumberList, onQuestionAdd }) => {
             onChange={(v) => {
               setSelectedExamNumber(v);
               // 회차 변경 시 중복 상태 재검토
-              checkDuplicate(qsubject, qnumber);
+              checkDuplicate(selectedQsubject, qnumber);
             }}
             placeholder={selectedExam ? '시험회차 선택' : '시험명을 먼저 선택해주세요.'}
             disabled={!selectedExam}
@@ -159,26 +178,41 @@ const StudyWriteQuestion = ({ examList, examNumberList, onQuestionAdd }) => {
           </Select>
         </Form.Item>
 
-        {/* 과목 번호 / 문항 번호 */}
-        <Form.Item label="과목 번호 / 문항 번호" required>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Input
-              placeholder="과목 번호"
-              value={qsubject}
-              onChange={(e) => handleNumberChange('qsubject', e.target.value)}
+        {/* 과목(ExamQsubject) / 문항 번호 */}
+        <div style={{ display: 'flex', gap: 8 }}>
+          {/* ✅ 과목: Select로 변경, 표시=slug, 값=id */}
+          <Form.Item label="과목" required style={{ flex: 1 }}>
+            <Select
+              value={selectedQsubject}
+              onChange={(v) => {
+                setSelectedQsubject(v);
+                checkDuplicate(v, qnumber);
+              }}
+              placeholder={selectedExamNumber ? '과목(ExamQsubject) 선택' : '시험회차를 먼저 선택하세요.'}
               disabled={!selectedExamNumber}
-              inputMode="numeric"
-            />
+              showSearch
+              optionFilterProp="children"
+              allowClear
+            >
+              {qsubjectsCache.map((qs) => (
+                <Option key={qs?.id} value={qs?.id}>
+                  {qs?.slug || `${qs?.esn}. ${qs?.est}`}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item label="문항 번호" required style={{ flex: 1 }}>
             <Input
-              placeholder="문항 번호"
+              placeholder="문항 번호(자연수)"
               value={qnumber}
-              onChange={(e) => handleNumberChange('qnumber', e.target.value)}
-              disabled={!qsubject}
+              onChange={(e) => handleQnumberChange(e.target.value)}
+              disabled={!selectedQsubject}
               inputMode="numeric"
             />
-          </div>
-          {isDuplicate && <Text type="danger">이미 등록된 문항입니다.</Text>}
-        </Form.Item>
+            {isDuplicate && <Text type="danger">이미 등록된 문항입니다.</Text>}
+          </Form.Item>
+        </div>
 
         {/* 문항 내용 */}
         <Form.Item label="문항 내용" required>

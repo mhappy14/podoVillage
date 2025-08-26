@@ -12,6 +12,7 @@ router.register('users', UserViewset, basename='users')
 
 router.register('exam', CreateExamViewset, basename='exam')
 router.register('examnumber', CreateExamnumberViewset, basename='examnumber')
+router.register('examqsubject', CreateExamQsubjectViewset, basename='examqsubject')
 router.register('question', CreateQuestionViewset, basename='question')
 router.register('mainsubject', CreateMainsubjectViewset, basename='mainsubject')
 router.register('detailsubject', CreateDetailsubjectViewset, basename='detailsubject')

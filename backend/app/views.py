@@ -127,7 +127,7 @@ class CreateExamViewset(viewsets.ModelViewSet):
 
 # 2 시험회차Examnumber(회차examnumber - 연도year)
 class CreateExamnumberViewset(viewsets.ModelViewSet):
-	queryset = Examnumber.objects.all()
+	queryset = Examnumber.objects.all().select_related("exam")
 	serializer_class = ExamnumberSerializer
 	permission_classes = [permissions.AllowAny]
 
@@ -145,34 +145,51 @@ class CreateExamnumberViewset(viewsets.ModelViewSet):
 			exists = Examnumber.objects.filter(exam_id=exam_id, examnumber=examnumber).exists()
 			return Response({"exists": exists}, status=200)
 
+class CreateExamQsubjectViewset(viewsets.ModelViewSet):
+    queryset = ExamQsubject.objects.all().select_related("exam")
+    serializer_class = ExamQsubjectSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def perform_create(self, serializer):
+        serializer.save()
+
 # 3 문제Question(번호questionnumber1 - 번호questionnumber2 - 문제questiontext - 좋아요 - 북마크 - 날짜)
 class CreateQuestionViewset(viewsets.ModelViewSet):
-	queryset = Question.objects.all().select_related("exam", "examnumber").prefetch_related("options")
-	serializer_class = QuestionSerializer
-	permission_classes = [permissions.AllowAny]
+    queryset = Question.objects.all().select_related(
+        "exam", "examnumber", "examqsubject"
+    ).prefetch_related("options")
+    serializer_class = QuestionSerializer
+    permission_classes = [permissions.AllowAny]
 
-	@transaction.atomic
-	def perform_create(self, serializer):
-		serializer.save()
+    @transaction.atomic
+    def perform_create(self, serializer):
+        serializer.save()
 
-	@action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny])
-	def check_question(self, request):
-			exam_id = request.query_params.get('exam')
-			examnumber_id = request.query_params.get('examnumber')
-			qsubject = request.query_params.get('qsubject')
-			qnumber = request.query_params.get('qnumber')
+    @action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny])
+    def check_question(self, request):
+        """
+        중복 검사용 엔드포인트:
+        - exam: 시험 ID
+        - examnumber: 회차 ID
+        - examqsubject: 과목 ID
+        - qnumber: 문항번호
+        """
+        exam_id = request.query_params.get('exam')
+        examnumber_id = request.query_params.get('examnumber')
+        examqsubject_id = request.query_params.get('examqsubject')
+        qnumber = request.query_params.get('qnumber')
 
-			if not all([exam_id, examnumber_id, qsubject, qnumber]):
-					return Response({"error": "exam, examnumber, qsubject, and qnumber are required."}, status=400)
+        if not all([exam_id, examnumber_id, examqsubject_id, qnumber]):
+            return Response({"error": "exam, examnumber, examqsubject, qnumber are required."}, status=400)
 
-			exists = Question.objects.filter(
-					exam_id=exam_id,
-					examnumber_id=examnumber_id,
-					qsubject=qsubject,
-					qnumber=qnumber
-			).exists()
+        exists = Question.objects.filter(
+            exam_id=exam_id,
+            examnumber_id=examnumber_id,
+            examqsubject_id=examqsubject_id,
+            qnumber=qnumber
+        ).exists()
 
-			return Response({"exists": exists}, status=200)
+        return Response({"exists": exists}, status=200)
 		
 # 4 주요과목Mainsubject(주요과목번호mainnumber - 주요과목mainname)
 class CreateMainsubjectViewset(viewsets.ModelViewSet):
