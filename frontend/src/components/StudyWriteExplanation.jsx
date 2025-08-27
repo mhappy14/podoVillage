@@ -4,6 +4,8 @@ import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import { useNavigate } from 'react-router-dom';
 import AxiosInstance from './AxiosInstance';
+import DOMPurify from 'dompurify';
+import parseWikiSyntax from './WikiParser';
 
 const { Option } = Select;
 const { Text } = Typography;
@@ -156,9 +158,15 @@ const StudyWriteExplanation = ({
     const text = q?.qtext ?? '';
     return `${n}회 ${subj} ${num}. ${text}`;
   };
+  
+  // 위키 미리보기 HTML
+  const previewHtml = useMemo(() => {
+    const raw = parseWikiSyntax(explanationText || '');
+    return DOMPurify.sanitize(raw);
+  }, [explanationText]);
 
   return (
-    <div style={{ margin: '0 1rem 0 1rem' }}>
+    <div style={{ margin: '0' }}>
       <Typography.Title level={5} style={{ margin: 0 }}>
         {isEdit ? 'Edit Explanation' : 'Write Explanation'}
       </Typography.Title>
@@ -275,16 +283,34 @@ const StudyWriteExplanation = ({
 
         {/* 설명 내용 */}
         <Form.Item label="설명 내용" required>
-          <ReactQuill
-            value={explanationText}
-            onChange={setExplanationText}
-            modules={modules}
-            formats={formats}
-            style={{ minHeight: 200, height: 400 }}
-          />
+          <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden' }}>
+            <textarea
+              value={explanationText}
+              onChange={(e) => setExplanationText(e.target.value)}
+              placeholder="예) == 제목 ==, [[링크]], * 목록 등"
+              style={{
+                width: '100%',
+                minHeight: 220,
+                padding: 12,
+                border: 'none',
+                outline: 'none',
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                lineHeight: 1.6,
+                resize: 'vertical'
+              }}
+            />
+            <div style={{ padding: '0.3rem 1rem 0.3rem 1rem' , borderTop: '1px solid #e5e7eb', background: '#fafafa' }}>
+              <strong>미리보기</strong>
+            </div>
+            <div
+              className="wiki-preview"
+              dangerouslySetInnerHTML={{ __html: previewHtml }}
+              style={{ padding: 16 }}
+            />
+          </div>
         </Form.Item>
 
-        <Form.Item>
+        <Form.Item style={{ margin: 0 }}>
           <Button type="primary" htmlType="submit" block loading={loading}>
             {isEdit ? '수정하기' : '저장하기'}
           </Button>

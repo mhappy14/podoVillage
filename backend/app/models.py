@@ -237,6 +237,7 @@ class Question(models.Model):
   qtext = models.CharField(max_length=1000)
   qscript = models.CharField(blank=True, null=True, max_length=1000)
   slug = models.SlugField(unique=True, null=True, blank=True, max_length=200, allow_unicode=True)
+  slug1 = models.SlugField(unique=True, null=True, blank=True, max_length=200, allow_unicode=True)
 
   def __str__(self):
     examnum = getattr(self.examnumber, "examnumber", None)
@@ -270,6 +271,21 @@ class Question(models.Model):
             self.slug = slugify(base, allow_unicode=True)[:200] or None
     if not self.slug:
         self.slug = f"q-{uuid4().hex[:16]}"
+
+    if not self.slug1 and self.examqsubject and self.examqsubject.esn and self.qnumber is not None:
+        base2 = f"{self.examqsubject.esn}과목 {self.qnumber}문항"
+        cand = slugify(base2, allow_unicode=True)[:200] or None
+        if not cand:
+            cand = f"q1-{uuid4().hex[:12]}"  # 폴백
+        # 유니크 충돌 시 접미사 붙여 회피
+        orig = cand
+        i = 1
+        while Question.objects.filter(slug1=cand).exclude(pk=self.pk).exists():
+            suffix = f"-{i}"
+            cand = (orig[: (200 - len(suffix))] + suffix)
+            i += 1
+        self.slug1 = cand
+
     super().save(*args, **kwargs)
 
   def explanations(self):
@@ -338,35 +354,35 @@ class Detailsubject(models.Model):
 		return  f"{self.detailslug}"
 
 class Explanation(models.Model):
-	exam = models.ForeignKey(Exam, on_delete=models.SET_NULL, null=True)
-	examnumber = models.ForeignKey(Examnumber, on_delete=models.SET_NULL, null=True)
-	mainsubject = models.ManyToManyField(Mainsubject)
-	detailsubject = models.ManyToManyField(Detailsubject)
-	question = models.ForeignKey(Question, on_delete=models.SET_NULL, null=True)
-	nickname = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
-	explanation = models.CharField(max_length=5000)
-	like = models.ManyToManyField(User, blank=True, related_name="like_explanation")
-	bookmark = models.ManyToManyField(User, blank=True, related_name="bookmark_explanation")
-	created_at = models.DateTimeField(auto_now_add=True) 
-	updated_at = models.DateTimeField(auto_now=True) 
+    exam = models.ForeignKey(Exam, on_delete=models.SET_NULL, null=True)
+    examnumber = models.ForeignKey(Examnumber, on_delete=models.SET_NULL, null=True)
+    mainsubject = models.ManyToManyField(Mainsubject)
+    detailsubject = models.ManyToManyField(Detailsubject)
+    question = models.ForeignKey(Question, on_delete=models.SET_NULL, null=True)
+    nickname = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    explanation = models.CharField(max_length=5000)
+    like = models.ManyToManyField(User, blank=True, related_name="like_explanation")
+    bookmark = models.ManyToManyField(User, blank=True, related_name="bookmark_explanation")
+    created_at = models.DateTimeField(auto_now_add=True) 
+    updated_at = models.DateTimeField(auto_now=True) 
 
-	@property
-	def like_count(self):
-			return self.like.count()
+    @property
+    def like_count(self):
+            return self.like.count()
 
-	@property
-	def bookmark_count(self):  # 북마크 수 계산
-			return self.bookmark.count()
+    @property
+    def bookmark_count(self):  # 북마크 수 계산
+            return self.bookmark.count()
 	
-	def save(self, *args, **kwargs):
-		# HTML 클린징 적용
-		self.explanation = bleach.clean(
-				self.explanation,
-				tags=['p', 'b', 'i', 'u', 'a', 'ul', 'ol', 'li', 'br'],  # 허용할 태그
-				attributes={'a': ['href', 'title']},  # 허용할 속성
-				strip=True,  # 허용하지 않는 태그 제거
-		)
-		super(Explanation, self).save(*args, **kwargs)
+    def save(self, *args, **kwargs):
+        # HTML 클린징 적용
+        self.explanation = bleach.clean(
+                self.explanation,
+                tags=['p', 'b', 'i', 'u', 'a', 'ul', 'ol', 'li', 'br'],  # 허용할 태그
+                attributes={'a': ['href', 'title']},  # 허용할 속성
+                strip=True,  # 허용하지 않는 태그 제거
+        )
+        super(Explanation, self).save(*args, **kwargs)
 
 #######################에세이#######################저자-기관-출판정보-본문
 #######################에세이#######################

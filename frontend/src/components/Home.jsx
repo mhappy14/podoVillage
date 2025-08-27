@@ -127,7 +127,7 @@ const Home = () => {
                         <Typography sx={{ width: '80%' }} variant="subtitle1">
                           <strong>{item?.question?.qtext ?? '(제목 없음)'}</strong><br />
                           {item?.exam?.examname ?? ''} {item?.examnumber?.year ?? ''}년 {item?.examnumber?.examnumber ?? ''}
-                          회 {item?.question?.questionnumber1 ?? ''}과목 {item?.question?.questionnumber2 ?? ''}문항
+                          회 {item?.question?.slug1 ?? ''}
                         </Typography>
                         <Typography variant="body2" sx={{ color: 'gray', width: '20%', textAlign: 'right' }}>
                           좋아요: {(item?.like?.length ?? 0)}개

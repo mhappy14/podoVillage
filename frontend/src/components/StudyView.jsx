@@ -122,7 +122,7 @@ const StudyView = () => {
             <Row justify="space-between" align="middle">
               <Col flex="auto">
                 <Title level={4} style={{ margin: 0 }}>
-                  {selectedExplanation?.question?.qsubject ?? '-'}-
+                  {selectedExplanation?.question?.qnumber ?? '-'}-
                   {selectedExplanation?.question?.qnumber ?? '-'}.
                   {' '}
                   {selectedExplanation?.question?.qtext ?? ''}

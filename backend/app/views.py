@@ -19,6 +19,15 @@ from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 import requests
 from app.views_invest import stock_history
+from urllib.parse import unquote
+import unicodedata
+
+def _normalize_title(raw: str) -> str:
+    # 안전 정규화: 퍼센트 디코드, 공백/슬래시 정리, 유니코드 정규화
+    t = unquote(raw or '').strip()
+    t = t.rstrip('/')            # 끝 슬래시 제거 (프론트와 규칙 일치)
+    t = unicodedata.normalize('NFKC', t)
+    return t
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -400,3 +409,19 @@ class WikiPageViewSet(viewsets.ModelViewSet):
         qs = WikiPage.objects.filter(Q(title__icontains=q)).order_by('-updated_at')[:10]
         serializer = self.get_serializer(qs, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path=r'by-title/(?P<title>.+)')
+    def by_title_path(self, request, title=None):
+        norm = _normalize_title(title)
+        page = get_object_or_404(WikiPage, title=norm)
+        return Response(self.get_serializer(page).data)
+
+		# 2) 쿼리스트링 버전 (title=? 로 받기)
+    @action(detail=False, methods=['get'], url_path='by-title')
+    def by_title_query(self, request):
+        raw = request.query_params.get('title', '')
+        if not raw:
+        		return Response({"detail": "title 필요"}, status=status.HTTP_400_BAD_REQUEST)
+        norm = _normalize_title(raw)
+        page = get_object_or_404(WikiPage, title=norm)
+        return Response(self.get_serializer(page).data)

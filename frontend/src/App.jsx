@@ -21,6 +21,7 @@ import Wiki from './components/Wiki';
 import WikiView from './components/WikiView';
 import WikiVersionList from './components/WikiVersionList';
 import WikiVersionView from './components/WikiVersionView';
+import WikiCreate  from './components/WikiCreate';
 import WikiEdit from './components/WikiEdit';
 import Invest from './components/Invest';
 import Mypage from './components/Mypage';
@@ -92,6 +93,7 @@ function App() {
                     <Route path="v/*" element={<WikiView />} />
                     <Route path="v/:title/versionslist" element={<WikiVersionList />} />
                     <Route path="v/:title/versionslist/:id" element={<WikiVersionView />} />
+                    <Route path="v/:title/create" element={<WikiCreate />} />
                     <Route path="v/:title/edit" element={<WikiEdit />} />
                   </Route>
                 </Route>

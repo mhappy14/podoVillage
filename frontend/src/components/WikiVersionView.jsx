@@ -1,9 +1,10 @@
 // src/WikiVersionView.jsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Card, Typography, Spin, Alert, Space, Tag, Button } from 'antd';
 import AxiosInstance from './AxiosInstance';
 import parseWikiSyntax from './WikiParser';
+import DOMPurify from 'dompurify';
 
 const { Title, Paragraph } = Typography;
 
@@ -32,6 +33,11 @@ export default function WikiVersionView() {
       return nextUrl;
     }
   };
+  
+  const html = useMemo(
+    () => DOMPurify.sanitize(parseWikiSyntax(version?.content || '')),
+    [version?.content]
+  );
 
   useEffect(() => {
     let alive = true;
@@ -134,7 +140,7 @@ export default function WikiVersionView() {
 
   return (
     <Card
-      title={<Title level={3}>{title} — 버전 v{version?.id}</Title>}
+      title={<Typography.Title level={3}><Link to={`/wiki/v/${encodeURIComponent(title)}`}>{title}</Link> — 버전 v{version?.id}</Typography.Title>}
       extra={
         <Space wrap>
           <Tag color="default">{editedAt}</Tag>
@@ -148,10 +154,7 @@ export default function WikiVersionView() {
       style={{ marginTop: '2rem' }}
     >
       <Paragraph>
-        <div
-          dangerouslySetInnerHTML={{ __html: contentHtml }}
-          style={{ whiteSpace: 'pre-wrap' }}
-        />
+        <div className="wiki-body" dangerouslySetInnerHTML={{ __html: html }} />
       </Paragraph>
     </Card>
   );

@@ -31,10 +31,3 @@ urlpatterns = router.urls + [
     path('fred/', fred_proxy, name='fred_proxy'),
     path('stock/<str:symbol>/', stock_history, name='stock-history')
 ]
-
-# 1 시험명Exam(시험명examname)
-# 2 시험회차Examnumber(회차examnumber - 연도year - 월month)
-# 3 문제Question(번호questionnumber1 - 번호questionnumber2 - 문제questiontext - 좋아요 - 북마크 - 날짜)
-# 4 주요과목Mainsubject(주요과목번호mainnumber - 주요과목mainname)
-# 5 세부과목Detailsubject(세부과목번호detailnumber - 세부과목detailtitle)
-# 6 해설Explanation(글쓴이 - 좋아요 - 북마크 - 날짜)

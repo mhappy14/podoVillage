@@ -116,7 +116,7 @@ const StudyWrite = () => {
       </Title>
 
       {/* 상단 - Explanation */}
-      <Card style={{ marginBottom: '2rem', padding: 0 }}>
+      <Card style={{ marginBottom: '1rem', padding: 0 }}>
         <StudyWriteExplanation
           examList={examList}
           examNumberList={examNumberList}

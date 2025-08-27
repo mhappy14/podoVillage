@@ -129,7 +129,9 @@ export default function WikiView() {
           <Button
             type="primary"
             onClick={() =>
-              navigate(`/wiki/v/${encodeURIComponent(title)}/edit`, { state: { allowEdit: true } })
+              navigate(`/wiki/v/${encodeURIComponent(title)}/${missing ? 'create' : 'edit'}`, {
+                state: { allowEdit: true },
+              })
             }
             disabled={!isLoggedIn}
           >
@@ -146,8 +148,8 @@ export default function WikiView() {
               type="dashed"
               onClick={() => {
                 const safeTitle = String(title).trim().replace(/\/+$/, ''); // 끝 슬래시 제거
-                navigate(`/wiki/v/${encodeURIComponent(safeTitle)}/edit`, {
-                  state: { allowEdit: true, startBlank: true }, // ← 요 포인트
+                navigate(`/wiki/v/${encodeURIComponent(safeTitle)}/create`, {
+                  state: { allowEdit: true },
                 });
               }}
               disabled={!isLoggedIn}
