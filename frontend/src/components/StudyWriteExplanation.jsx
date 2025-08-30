@@ -147,7 +147,7 @@ const StudyWriteExplanation = ({
 
   // 문항 표시: slug(있으면) / 없으면 "n회 [과목slug]. qnumber. text"
   const renderQuestionLabel = (q) => {
-    if (q?.slug) return q.slug;
+    if (q?.slug1) return `${q.slug1} ${q.qtext ?? ''}`;
     const n = q?.examnumber?.examnumber ?? '-';
     const subj =
       q?.examqsubject?.slug ??
@@ -158,12 +158,6 @@ const StudyWriteExplanation = ({
     const text = q?.qtext ?? '';
     return `${n}회 ${subj} ${num}. ${text}`;
   };
-  
-  // 위키 미리보기 HTML
-  const previewHtml = useMemo(() => {
-    const raw = parseWikiSyntax(explanationText || '');
-    return DOMPurify.sanitize(raw);
-  }, [explanationText]);
 
   return (
     <div style={{ margin: '0' }}>
@@ -298,14 +292,6 @@ const StudyWriteExplanation = ({
                 lineHeight: 1.6,
                 resize: 'vertical'
               }}
-            />
-            <div style={{ padding: '0.3rem 1rem 0.3rem 1rem' , borderTop: '1px solid #e5e7eb', background: '#fafafa' }}>
-              <strong>미리보기</strong>
-            </div>
-            <div
-              className="wiki-preview"
-              dangerouslySetInnerHTML={{ __html: previewHtml }}
-              style={{ padding: 16 }}
             />
           </div>
         </Form.Item>
