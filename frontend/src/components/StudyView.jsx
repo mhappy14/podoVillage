@@ -119,25 +119,28 @@ const StudyView = () => {
         <>
           {/* 글 상세 내용 */}
           <Card style={{ marginBottom: 24 }}>
-            <Row justify="space-between" align="middle">
-              <Col flex="auto">
-                <Title level={4} style={{ margin: 0 }}>
-                  {selectedExplanation?.question?.qnumber ?? '-'}-
-                  {selectedExplanation?.question?.qnumber ?? '-'}.
-                  {' '}
-                  {selectedExplanation?.question?.qtext ?? ''}
-                </Title>
-              </Col>
-              <Col style={{ textAlign: 'right' }}>
-                <Text strong>{selectedExplanation?.exam?.examname ?? '-'}</Text>{' '}
-                <Text>
-                  {selectedExplanation?.examnumber?.examnumber ?? '-'}회 (
-                  {selectedExplanation?.examnumber?.year ?? '-'})
-                </Text>
-                <br />
-                <Text>작성자: {selectedExplanation?.nickname?.nickname || 'null'}</Text>
-              </Col>
-            </Row>
+            <Row justify="space-between" align="middle" gutter={16}>
+  {/* 왼쪽 영역: 9 비율 */}
+  <Col flex="9">
+    <Title level={4} style={{ margin: 0 }}>
+      {selectedExplanation?.question?.qnumber ?? '-'}-
+      {selectedExplanation?.question?.qnumber ?? '-'}.
+      {' '}
+      {selectedExplanation?.question?.qtext ?? ''}
+    </Title>
+  </Col>
+
+  {/* 오른쪽 영역: 1 비율 */}
+  <Col flex="1" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+    <Text strong>{selectedExplanation?.exam?.examname ?? '-'}</Text>{' '}
+    <Text>
+      {selectedExplanation?.examnumber?.examnumber ?? '-'}회 (
+      {selectedExplanation?.examnumber?.year ?? '-'})
+    </Text>
+    <br />
+    <Text>작성자: {selectedExplanation?.nickname?.nickname || 'null'}</Text>
+  </Col>
+</Row>
 
             <div style={{ marginTop: 16 }}>
               <div
