@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import AxiosInstance from './AxiosInstance';
 import Comments from './Comments';
 import DOMPurify from 'dompurify';
+import parseWikiSyntax from './WikiParser'; // ✅ 추가
 import { Card, Row, Col, Typography, Button, Pagination, Spin, message } from 'antd';
 
 const { Title, Text } = Typography;
@@ -40,6 +41,13 @@ const StudyView = () => {
   const paginatedExplanations = useMemo(() => {
     return sortedExplanations.slice(indexOfFirstItem, indexOfLastItem);
   }, [sortedExplanations, indexOfFirstItem, indexOfLastItem]);
+ 
+  // ✅ 위키 문법 파싱 (useMemo로 캐싱)
+  const parsedExplanation = useMemo(() => {
+    if (!selectedExplanation?.explanation) return '';
+    const raw = parseWikiSyntax(selectedExplanation.explanation);
+    return DOMPurify.sanitize(raw);
+  }, [selectedExplanation?.explanation]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -142,13 +150,18 @@ const StudyView = () => {
   </Col>
 </Row>
 
-            <div style={{ marginTop: 16 }}>
-              <div
-                dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(selectedExplanation?.explanation || ''),
-                }}
-              />
-            </div>
+            {/* ✅ 위키 파서 적용 */}
+            <div 
+              className="wiki-preview" 
+              style={{ 
+                marginTop: 16,
+                padding: '1rem',
+                border: '1px solid #e5e7eb',
+                borderRadius: 8,
+                minHeight: 100
+              }}
+              dangerouslySetInnerHTML={{ __html: parsedExplanation }}
+            />
 
             <div style={{ marginTop: 16 }}>
               <Text>

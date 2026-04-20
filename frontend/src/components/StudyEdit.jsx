@@ -108,7 +108,7 @@ const StudyEdit = () => {
               </Col>
               <Col span={8}>
                 {/* questionList는 백엔드에서 qsubject/qnumber/qtext로 내려옴.
-                    자식 컴포넌트가 해당 키를 사용하도록 이미 반영되어 있어야 합니다. */}
+                    자식 컴포넌트가 해당 키를 사용하도록 이미 반영되어 있어야 함. */}
                 <StudyWriteQuestion
                   examList={examList}
                   examNumberList={examNumberList}

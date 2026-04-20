@@ -60,7 +60,7 @@ async function fetchFredData({ api_key, monthlyIds, dailyIds, vintage_dates }) {
   await Promise.all(defs.map(def =>
     limitRequests(async () => {
       const { id, freq } = def;
-      const { data } = await axios.get("http://localhost:8000/api/fred", {
+      const { data } = await axios.get("http://localhost:8000/fred", {
         params: {
           series_id: id,
           api_key,
