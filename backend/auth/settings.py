@@ -108,6 +108,25 @@ REST_FRAMEWORK = {
 }
 
 
+# ──────────────────────────────────────────────────────────────
+# 투자지표 API용 전역 설정
+#
+# 1) FRED API 키 (환경변수 또는 .env 에 설정)
+FRED_API_KEY = os.environ.get('FRED_API_KEY', '6335426c3b0d7423815d6ca3068b1a7f')
+
+# 2) 캐시 백엔드 (간단히 메모리 캐시; 필요시 Redis 등으로 교체)
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'invest-indicator-cache',
+    }
+}
+
+# 3) (필요하면) 타임존·언어 등 나머지 설정…
+TIME_ZONE = 'Asia/Seoul'
+USE_I18N = True
+USE_TZ = True
+
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
@@ -177,3 +196,15 @@ WIKI_ACCOUNT_HANDLING = True
 WIKI_ACCOUNT_SIGNUP_ALLOWED = True
 
 SITE_ID = 1
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": { "class": "logging.StreamHandler" },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "DEBUG",
+    },
+}

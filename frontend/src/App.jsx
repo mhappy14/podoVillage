@@ -1,7 +1,7 @@
 // App.jsx
 import React from 'react';
 import { Routes, Route, useLocation, Outlet } from 'react-router-dom';
-import { Helmet } from 'react-helmet';
+import { HelmetProvider } from "react-helmet-async";
 import Navbar from './components/Navbar';
 import Home from './components/Home';
 import Register from './components/Register';
@@ -42,7 +42,7 @@ function App() {
 
   return (
     <>
-      <Helmet>
+      <HelmetProvider>
         <link rel="stylesheet" type="text/css" href="/App1.css" />
         {location.pathname === '/about' && (
           <link rel="stylesheet" type="text/css" href="/App2.css" />
@@ -50,7 +50,7 @@ function App() {
         {isWiki && (
           <link rel="stylesheet" type="text/css" href="/App3.css" />
         )}
-      </Helmet>
+      </HelmetProvider>
 
       {/* Navbar 고정 */}
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, width: '100%', zIndex: 1000 }}>
