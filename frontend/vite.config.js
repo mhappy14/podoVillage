@@ -23,6 +23,13 @@ export default defineConfig({
         // 필요하다면 pathRewrite 로 프리픽스 제거 가능
         // rewrite: (path) => path.replace(/^\/invest/, '/invest'),
       },
+      // FRED API CORS 우회 — Inv_indicator.jsx 에서 사용
+      '/fredapi': {
+        target: 'https://api.stlouisfed.org',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/fredapi/, ''),
+      },
     },
   },
 })
