@@ -22,6 +22,7 @@ from app.views_invest import (
     fear_greed_index,
     bitcoin_price,
     market_signals,
+    ndx100_list,
 )
 
 router = DefaultRouter()
@@ -64,4 +65,5 @@ urlpatterns = router.urls + [
     path('invest/fear-greed/',         fear_greed_index, name='invest-fear-greed'),
     path('invest/bitcoin/',            bitcoin_price,    name='invest-bitcoin'),
     path('invest/market-signals/',     market_signals,   name='invest-market-signals'),
+    path('invest/ndx100/',             ndx100_list,      name='invest-ndx100'),
 ]

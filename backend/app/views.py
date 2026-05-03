@@ -21,6 +21,19 @@ import requests
 from app.views_invest import stock_history
 from urllib.parse import unquote
 import unicodedata
+from django.http import JsonResponse
+
+NDX100 = [
+    {"ticker": "AAPL", "name": "Apple"},
+    {"ticker": "MSFT", "name": "Microsoft"},
+    # ...
+]
+
+def ndx100_list(request):
+    quarter = request.GET.get("quarter")  # YYYY-MM-DD
+    # 분기별로 다른 구성을 줄 거면 quarter 기준 필터링
+    return JsonResponse({"items": NDX100, "quarter": quarter})
+
 
 def _normalize_title(raw: str) -> str:
     # 안전 정규화: 퍼센트 디코드, 공백/슬래시 정리, 유니코드 정규화

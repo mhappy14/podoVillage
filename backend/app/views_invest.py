@@ -1,9 +1,12 @@
 from django.conf import settings
 from django.http import JsonResponse
+from django.core.cache import cache
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from django.views.decorators.cache import cache_page
 from datetime import datetime, timedelta
+import csv
+import io
 import requests
 import yfinance as yf
 import logging
@@ -226,3 +229,142 @@ def market_signals(request):
     except Exception as e:
         logger.error("market_signals error: %s", e, exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
+
+
+# =====================================================================
+# 나스닥-100 구성종목 (Invesco QQQ ETF holdings 기반)
+# ---------------------------------------------------------------------
+# QQQ 는 나스닥-100을 추종하는 ETF로, Invesco가 매일 보유종목 CSV를 무료
+# 공개합니다. NDX 자체 라이선스 없이 합법적으로 구성종목을 확보할 수 있는
+# 가장 안정적인 무료 경로입니다. 6시간 캐싱으로 외부 호출을 최소화하고,
+# CSV 컬럼명이 일부 바뀔 가능성에 대비해 여러 alias를 시도합니다.
+# =====================================================================
+
+QQQ_HOLDINGS_URL = (
+    "https://www.invesco.com/us/financial-products/etfs/holdings"
+    "?audienceType=Investor&action=download&ticker=QQQ"
+)
+
+# Invesco/기타 소스가 쓰는 섹터명 표기 차이를 GICS 표준으로 통일
+SECTOR_NORMALIZE = {
+    "Technology": "Information Technology",
+    "Tech": "Information Technology",
+    "Healthcare": "Health Care",
+    "Health": "Health Care",
+    "Telecommunications": "Communication Services",
+    "Telecommunication Services": "Communication Services",
+    "Telecom Services": "Communication Services",
+    "Communications": "Communication Services",
+    "Real Estate Investment Trusts (REITs)": "Real Estate",
+}
+
+NDX100_CACHE_KEY = "ndx100_qqq_holdings_v1"
+NDX100_CACHE_TTL = 60 * 60 * 6  # 6시간
+
+
+def _normalize_sector(s):
+    if not s:
+        return ""
+    s = s.strip()
+    return SECTOR_NORMALIZE.get(s, s)
+
+
+def _parse_qqq_csv(text):
+    """Invesco QQQ holdings CSV → [{ticker, name, sector, weight}, ...]"""
+    reader = csv.DictReader(io.StringIO(text))
+    items = []
+    for row in reader:
+        # 컬럼명이 'Holding Ticker' / 'Ticker' 등으로 다를 수 있어 alias 시도
+        ticker = (
+            row.get("Holding Ticker")
+            or row.get("Ticker")
+            or row.get("StockTicker")
+            or ""
+        ).strip()
+        name = (
+            row.get("Name")
+            or row.get("Holding")
+            or row.get("Description")
+            or ""
+        ).strip()
+        sector_raw = (row.get("Sector") or "").strip()
+        weight_raw = (
+            row.get("Weight")
+            or row.get("Weight (%)")
+            or row.get("PercentageOfFund")
+            or "0"
+        ).strip().replace("%", "").replace(",", "")
+        try:
+            weight = float(weight_raw) if weight_raw else 0.0
+        except ValueError:
+            weight = 0.0
+
+        if not ticker:
+            continue
+        # 현금/스왑/캐시컬렉터럴 등 제외
+        if ticker.upper() in {"CASH", "USD", "SWAP", "-", "MMF"}:
+            continue
+
+        items.append({
+            "ticker": ticker,
+            "name": name,
+            "sector": _normalize_sector(sector_raw),
+            "weight": round(weight, 4),
+        })
+    return items
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def ndx100_list(request):
+    """
+    GET /invest/ndx100/?quarter=YYYY-MM-DD
+    Invesco QQQ holdings 기반 NDX-100 구성종목을 반환.
+    응답: { items: [{ticker,name,sector,weight}], count, source, quarter }
+    """
+    quarter = request.GET.get("quarter")  # 메타로만 echo, 분기 필터링은 미적용
+
+    cached = cache.get(NDX100_CACHE_KEY)
+    if cached:
+        return JsonResponse({
+            "items": cached,
+            "count": len(cached),
+            "source": "invesco_qqq_cached",
+            "quarter": quarter,
+        })
+
+    try:
+        resp = requests.get(
+            QQQ_HOLDINGS_URL,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; ndx100-fetcher)",
+                "Accept": "text/csv,application/csv,*/*",
+            },
+            timeout=15,
+            allow_redirects=True,
+        )
+        resp.raise_for_status()
+        text = resp.content.decode("utf-8-sig", errors="replace")
+        items = _parse_qqq_csv(text)
+
+        if not items:
+            raise ValueError("Invesco CSV에서 종목을 추출하지 못했습니다.")
+
+        # 가중치 내림차순
+        items.sort(key=lambda x: -x["weight"])
+
+        cache.set(NDX100_CACHE_KEY, items, NDX100_CACHE_TTL)
+        return JsonResponse({
+            "items": items,
+            "count": len(items),
+            "source": "invesco_qqq",
+            "quarter": quarter,
+        })
+    except Exception as e:
+        logger.error("ndx100_list error: %s", e, exc_info=True)
+        return JsonResponse({
+            "error": "NDX 100 데이터 로드 실패",
+            "detail": str(e),
+            "items": [],
+            "source": "error",
+        }, status=502)

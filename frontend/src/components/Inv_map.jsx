@@ -19,7 +19,7 @@ export default function InvestMap() {
     script.async = true;
     script.innerHTML = JSON.stringify({
       exchanges: [],
-      dataSource: "SPX500",
+      dataSource: "NASDAQ100",
       grouping: "sector",
       blockSize: "market_cap_basic",
       blockColor: "change",
