@@ -580,72 +580,112 @@ export default function InvestIndicator() {
     : "전체 (종목 미선택)";
   const selectedSector = selectedStock?.sector || null;
 
+  // 섹터별 종합 시그널 — 현재는 매크로 지표 기반이라 점수는 동일하지만,
+  // 섹터별 종목 수/비중을 함께 노출하여 추후 종목별 지표 도입 시 자연스럽게 차별화 가능
+  const sectorBreakdown = useMemo(() => {
+    const map = new Map();
+    ndxList.forEach((s) => {
+      const sec = s.sector || "Other";
+      if (!map.has(sec)) {
+        map.set(sec, { sector: sec, count: 0, weight: 0 });
+      }
+      const entry = map.get(sec);
+      entry.count += 1;
+      entry.weight += Number(s.weight) || 0;
+    });
+    return Array.from(map.values())
+      .map((e) => ({
+        ...e,
+        bias: summary.bias,
+        score: summary.score,
+        color: summary.color,
+      }))
+      .sort((a, b) => b.weight - a.weight || b.count - a.count);
+  }, [ndxList, summary]);
+
   return (
     <div style={{ padding: 16 }}>
-      <Row gutter={[16, 16]} style={{ marginBottom: 16 }} align="middle">
-        <Col xs={24} md={14}>
-          <Space wrap align="center" size={12} style={{ width: "100%" }}>
-            <Title level={3} style={{ margin: 0 }}>
-              나스닥 100 분기 방향성 예측 지표
-            </Title>
-            <Select
-              showSearch
-              allowClear
-              placeholder="종목 선택"
-              style={{ minWidth: 240 }}
-              value={selectedStock?.ticker}
-              onChange={(value) => {
-                if (!value) { setSelectedStock(null); return; }
-                const found = ndxList.find((s) => s.ticker === value);
-                setSelectedStock(found || { ticker: value, name: "" });
-              }}
-              optionFilterProp="label"
-              options={ndxList.map((s) => {
-                const abbr = SECTOR_ABBR[s.sector] || (s.sector ? "ETC" : "");
-                const prefix = abbr ? `[${abbr}] ` : "";
-                return {
-                  value: s.ticker,
-                  label: `${prefix}${s.ticker} — ${s.name}`,
-                };
-              })}
-            />
-          </Space>
-          <div style={{ marginTop: 4 }}>
-            <Text type="secondary" style={{ display: "flex", flexDirection: "column" }}>
-              <Text style={{ fontSize: 11 }}>· 기준일: {quarterLabel(refDate)}</Text>
-              <Text style={{ fontSize: 11 }}>· QoQ: {quarterLabel(prevQDate)}</Text>
-              <Text style={{ fontSize: 11 }}>· YoY: {quarterLabel(prevYDate)}</Text>
-              {ndxSource === "fallback" && (
-                <Text type="warning" style={{ fontSize: 11 }}>
-                  · 종목 리스트: fallback (백엔드 /invest/ndx100/ 미응답)
-                </Text>
-              )}
-            </Text>
-          </div>
-        </Col>
-        <Col xs={24} md={10}>
-          <Card
-            size="small"
-            styles={{ body: { padding: 14 } }}
-            style={{
-              borderColor:
-                summary.color === "green" ? "#52c41a"
-                : summary.color === "red" ? "#ff4d4f" : undefined,
+      {/* ===== 헤더: 1줄(타이틀 좌측 / 셀렉터 우측) + 2줄(메타 3등분) ===== */}
+      <div style={{ marginBottom: 16 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <Title level={4} style={{ margin: 0, flex: 1 }}>
+            나스닥 100 분기 방향성 예측 지표
+          </Title>
+          <Select
+            showSearch
+            allowClear
+            placeholder="종목 선택 (NDX 100)"
+            style={{ flex: 1 }}
+            value={selectedStock?.ticker}
+            onChange={(value) => {
+              if (!value) { setSelectedStock(null); return; }
+              const found = ndxList.find((s) => s.ticker === value);
+              setSelectedStock(found || { ticker: value, name: "" });
             }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-              <Text type="secondary" style={{ fontSize: 11, letterSpacing: 1 }}>
-                {selectedLabel} · 종합 시그널 (가중평균)
-              </Text>
-              {selectedSector && (
-                <Tag color={SECTOR_COLOR[selectedSector] || "default"} style={{ marginRight: 0 }}>
-                  섹터: {selectedSector}
-                </Tag>
-              )}
-            </div>
-            <Space align="center" style={{ marginTop: 4 }}>
-              <Title level={3} style={{ margin: 0 }}>{summary.bias}</Title>
-              <Tag color={summary.color}>
+            optionFilterProp="label"
+            options={ndxList.map((s) => {
+              const abbr = SECTOR_ABBR[s.sector] || (s.sector ? "ETC" : "");
+              const suffix = abbr ? ` [${abbr}]` : "";
+              return {
+                value: s.ticker,
+                label: `${s.ticker} — ${s.name}${suffix}`,
+              };
+            })}
+          />
+        </div>
+
+        <Row gutter={8} style={{ marginTop: 8 }}>
+          <Col span={8}>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              · 기준일: {quarterLabel(refDate)}
+            </Text>
+          </Col>
+          <Col span={8}>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              · QoQ: {quarterLabel(prevQDate)}
+            </Text>
+          </Col>
+          <Col span={8}>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              · YoY: {quarterLabel(prevYDate)}
+            </Text>
+          </Col>
+        </Row>
+        {ndxSource === "fallback" && (
+          <Text type="warning" style={{ fontSize: 11, display: "block", marginTop: 4 }}>
+            · 종목 리스트: fallback (백엔드 /invest/ndx100/ 미응답)
+          </Text>
+        )}
+      </div>
+
+      {/* ===== 종합 시그널 — 가로 전체, 좌(전체 시장) / 우(선택 종목) ===== */}
+      <Card
+        size="small"
+        style={{
+          marginBottom: 16,
+          borderColor:
+            summary.color === "green" ? "#52c41a"
+            : summary.color === "red" ? "#ff4d4f" : undefined,
+        }}
+        styles={{ body: { padding: 16 } }}
+      >
+        <Row gutter={[24, 16]}>
+          {/* 좌측: 전체 시장 */}
+          <Col xs={24} md={12} style={{ borderRight: "1px solid #f0f0f0" }}>
+            <Text type="secondary" style={{ fontSize: 11, letterSpacing: 1 }}>
+              전체 시장 종합 시그널 (가중평균)
+            </Text>
+            <Space align="center" style={{ marginTop: 6 }}>
+              <Title level={2} style={{ margin: 0 }}>{summary.bias}</Title>
+              <Tag color={summary.color} style={{ fontSize: 14, padding: "2px 8px" }}>
                 {summary.score >= 0 ? "+" : ""}{summary.score.toFixed(0)}점
               </Tag>
             </Space>
@@ -656,22 +696,114 @@ export default function InvestIndicator() {
                 summary.color === "green" ? "#52c41a"
                 : summary.color === "red" ? "#ff4d4f" : "#faad14"
               }
-              style={{ marginTop: 4 }}
+              style={{ marginTop: 6 }}
             />
             <Text type="secondary" style={{ fontSize: 12 }}>
               집계 {summary.count}개 · 총 가중치 {summary.totalW}
               {" · "}긍정W {summary.bullW} / 부정W {summary.bearW} / 중립W {summary.neutW}
             </Text>
-            {selectedStock && (
-              <div style={{ marginTop: 4 }}>
+          </Col>
+
+          {/* 우측: 선택 종목 */}
+          <Col xs={24} md={12}>
+            {selectedStock ? (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <Text type="secondary" style={{ fontSize: 11, letterSpacing: 1 }}>
+                    {selectedLabel}
+                  </Text>
+                  {selectedSector && (
+                    <Tag color={SECTOR_COLOR[selectedSector] || "default"} style={{ marginRight: 0 }}>
+                      [{SECTOR_ABBR[selectedSector] || "ETC"}] {selectedSector}
+                    </Tag>
+                  )}
+                </div>
+                <Space align="center" style={{ marginTop: 6 }}>
+                  <Title level={2} style={{ margin: 0 }}>{summary.bias}</Title>
+                  <Tag color={summary.color} style={{ fontSize: 14, padding: "2px 8px" }}>
+                    {summary.score >= 0 ? "+" : ""}{summary.score.toFixed(0)}점
+                  </Tag>
+                </Space>
+                <Progress
+                  percent={summary.progressPct}
+                  showInfo={false}
+                  strokeColor={
+                    summary.color === "green" ? "#52c41a"
+                    : summary.color === "red" ? "#ff4d4f" : "#faad14"
+                  }
+                  style={{ marginTop: 6 }}
+                />
                 <Text type="secondary" style={{ fontSize: 10 }}>
                   ※ 현재는 매크로 지표 기반 — 종목별 지표(MA, P/C 등) 추가 시 종목별 차별화
                 </Text>
+              </>
+            ) : (
+              <div style={{ height: "100%", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                <Text type="secondary" style={{ fontSize: 11, letterSpacing: 1 }}>
+                  선택 종목 시그널
+                </Text>
+                <Title level={3} type="secondary" style={{ margin: "6px 0 0 0", fontWeight: 400 }}>
+                  종목 미선택
+                </Title>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  상단 셀렉터에서 NDX 100 종목을 선택하면 해당 종목 시그널이 여기에 표시됩니다.
+                </Text>
               </div>
             )}
-          </Card>
-        </Col>
-      </Row>
+          </Col>
+        </Row>
+      </Card>
+
+      {/* ===== 섹터별 시그널 — 한 줄(자동 wrap) ===== */}
+      <Card
+        size="small"
+        style={{ marginBottom: 16 }}
+        title={
+          <span style={{ fontWeight: 600 }}>
+            섹터별 시그널{" "}
+            <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>
+              (NDX 100 구성종목 기반 · {sectorBreakdown.length}개 섹터)
+            </Text>
+          </span>
+        }
+        styles={{ body: { padding: 12 } }}
+      >
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {sectorBreakdown.map((s) => (
+            <div
+              key={s.sector}
+              style={{
+                flex: "1 1 150px",
+                minWidth: 140,
+                maxWidth: 220,
+                padding: "8px 10px",
+                border: "1px solid #f0f0f0",
+                borderLeft: `3px solid ${
+                  s.color === "green" ? "#52c41a"
+                  : s.color === "red" ? "#ff4d4f" : "#faad14"
+                }`,
+                borderRadius: 4,
+                background: "#fafafa",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
+                <Tag color={SECTOR_COLOR[s.sector] || "default"} style={{ marginRight: 0, fontSize: 10 }}>
+                  {SECTOR_ABBR[s.sector] || "ETC"}
+                </Tag>
+                <Tag color={s.color} style={{ marginRight: 0, fontSize: 11, fontWeight: 600 }}>
+                  {s.score >= 0 ? "+" : ""}{s.score.toFixed(0)}
+                </Tag>
+              </div>
+              <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.3 }}>
+                <Text strong style={{ fontSize: 12 }}>{s.sector}</Text>
+              </div>
+              <Text type="secondary" style={{ fontSize: 10 }}>
+                {s.count}종목 · 비중 {s.weight.toFixed(1)}%
+              </Text>
+            </div>
+          ))}
+        </div>
+      </Card>
 
       {loading && (
         <div style={{ textAlign: "center", padding: 16 }}>
@@ -701,8 +833,7 @@ export default function InvestIndicator() {
               return (
                 <Col xs={24} sm={12} md={8} lg={6} key={item.name}>
                   <IndicatorCard
-                    item={item}
-                    current={r?.current ?? null}
+                    item={item}                     current={r?.current ?? null}
                     prevQ={r?.prevQ ?? null}
                     prevY={r?.prevY ?? null}
                     weight={weights[item.name] ?? 50}

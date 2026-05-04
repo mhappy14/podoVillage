@@ -37,6 +37,6 @@ export default function InvestMap() {
   }, []);
 
   return (
-    <div className="tradingview-widget-container" ref={containerRef} />
+    <div className="tradingview-widget-container" ref={containerRef} style={{ paddingBottom: "20px" }}  />
   );
 }

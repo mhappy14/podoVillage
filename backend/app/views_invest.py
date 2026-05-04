@@ -7,6 +7,8 @@ from django.views.decorators.cache import cache_page
 from datetime import datetime, timedelta
 import csv
 import io
+import re
+import html as html_lib
 import requests
 import yfinance as yf
 import logging
@@ -232,20 +234,25 @@ def market_signals(request):
 
 
 # =====================================================================
-# 나스닥-100 구성종목 (Invesco QQQ ETF holdings 기반)
+# 나스닥-100 구성종목 (다중 소스 fallback)
 # ---------------------------------------------------------------------
-# QQQ 는 나스닥-100을 추종하는 ETF로, Invesco가 매일 보유종목 CSV를 무료
-# 공개합니다. NDX 자체 라이선스 없이 합법적으로 구성종목을 확보할 수 있는
-# 가장 안정적인 무료 경로입니다. 6시간 캐싱으로 외부 호출을 최소화하고,
-# CSV 컬럼명이 일부 바뀔 가능성에 대비해 여러 alias를 시도합니다.
+# 1순위: Slickcharts (HTML, ticker+name+weight 안정적 무료 제공)
+# 2순위: Invesco QQQ holdings CSV (URL 변경 시 부활용 retry)
+# 3순위: Wikipedia API (백업)
+# 섹터: Slickcharts/위키에는 GICS 섹터가 없거나 부정확하므로
+#       백엔드 자체 정적 매핑(TICKER_TO_SECTOR)으로 보강.
+# 캐시: 성공 시 6시간.
 # =====================================================================
 
+SLICKCHARTS_NDX_URL = "https://www.slickcharts.com/nasdaq100"
 QQQ_HOLDINGS_URL = (
     "https://www.invesco.com/us/financial-products/etfs/holdings"
     "?audienceType=Investor&action=download&ticker=QQQ"
 )
 
-# Invesco/기타 소스가 쓰는 섹터명 표기 차이를 GICS 표준으로 통일
+NDX100_CACHE_KEY = "ndx100_holdings_v2"
+NDX100_CACHE_TTL = 60 * 60 * 6  # 6시간
+
 SECTOR_NORMALIZE = {
     "Technology": "Information Technology",
     "Tech": "Information Technology",
@@ -255,11 +262,62 @@ SECTOR_NORMALIZE = {
     "Telecommunication Services": "Communication Services",
     "Telecom Services": "Communication Services",
     "Communications": "Communication Services",
-    "Real Estate Investment Trusts (REITs)": "Real Estate",
 }
 
-NDX100_CACHE_KEY = "ndx100_qqq_holdings_v1"
-NDX100_CACHE_TTL = 60 * 60 * 6  # 6시간
+# GICS 섹터 정적 매핑 (분기마다 신규 편입 종목 추가 필요)
+TICKER_TO_SECTOR = {
+    "AAPL": "Information Technology", "MSFT": "Information Technology",
+    "NVDA": "Information Technology", "AMZN": "Consumer Discretionary",
+    "GOOGL": "Communication Services", "GOOG": "Communication Services",
+    "META": "Communication Services", "AVGO": "Information Technology",
+    "TSLA": "Consumer Discretionary", "COST": "Consumer Staples",
+    "NFLX": "Communication Services", "ADBE": "Information Technology",
+    "AMD": "Information Technology", "CSCO": "Information Technology",
+    "PEP": "Consumer Staples", "TMUS": "Communication Services",
+    "INTU": "Information Technology", "AMGN": "Health Care",
+    "TXN": "Information Technology", "QCOM": "Information Technology",
+    "ISRG": "Health Care", "AMAT": "Information Technology",
+    "BKNG": "Consumer Discretionary", "HON": "Industrials",
+    "CMCSA": "Communication Services", "VRTX": "Health Care",
+    "SBUX": "Consumer Discretionary", "GILD": "Health Care",
+    "MU": "Information Technology", "LRCX": "Information Technology",
+    "ADI": "Information Technology", "MDLZ": "Consumer Staples",
+    "INTC": "Information Technology", "REGN": "Health Care",
+    "ADP": "Industrials", "KLAC": "Information Technology",
+    "PANW": "Information Technology", "SNPS": "Information Technology",
+    "CDNS": "Information Technology", "ABNB": "Consumer Discretionary",
+    "CRWD": "Information Technology", "MELI": "Consumer Discretionary",
+    "MAR": "Consumer Discretionary", "FTNT": "Information Technology",
+    "ORLY": "Consumer Discretionary", "ASML": "Information Technology",
+    "ROP": "Industrials", "MRVL": "Information Technology",
+    "DASH": "Consumer Discretionary", "NXPI": "Information Technology",
+    "PCAR": "Industrials", "CTAS": "Industrials",
+    "ADSK": "Information Technology", "MNST": "Consumer Staples",
+    "AEP": "Utilities", "CHTR": "Communication Services",
+    "MCHP": "Information Technology", "WDAY": "Information Technology",
+    "AZN": "Health Care", "PYPL": "Financials",
+    "KDP": "Consumer Staples", "CPRT": "Industrials",
+    "EXC": "Utilities", "IDXX": "Health Care",
+    "DDOG": "Information Technology", "CSGP": "Industrials",
+    "ROST": "Consumer Discretionary", "FANG": "Energy",
+    "FAST": "Industrials", "GEHC": "Health Care",
+    "KHC": "Consumer Staples", "BKR": "Energy",
+    "CCEP": "Consumer Staples", "ODFL": "Industrials",
+    "ON": "Information Technology", "PAYX": "Industrials",
+    "EA": "Communication Services", "VRSK": "Industrials",
+    "BIIB": "Health Care", "XEL": "Utilities",
+    "ZS": "Information Technology", "ANSS": "Information Technology",
+    "CTSH": "Information Technology", "CDW": "Information Technology",
+    "TTD": "Information Technology", "LULU": "Consumer Discretionary",
+    "GFS": "Information Technology", "DXCM": "Health Care",
+    "MDB": "Information Technology", "ARM": "Information Technology",
+    "WBD": "Communication Services", "TEAM": "Information Technology",
+    "DLTR": "Consumer Discretionary", "LIN": "Materials",
+    "PDD": "Consumer Discretionary", "PLTR": "Information Technology",
+    "APP": "Information Technology", "MSTR": "Information Technology",
+    "CEG": "Utilities", "TTWO": "Communication Services",
+    "CSX": "Industrials", "ALGN": "Health Care",
+}
 
 
 def _normalize_sector(s):
@@ -269,49 +327,189 @@ def _normalize_sector(s):
     return SECTOR_NORMALIZE.get(s, s)
 
 
+def _enrich_sector(items):
+    """tickers에 정적 섹터 매핑을 채워넣음 (이미 sector가 있으면 정규화만)"""
+    for it in items:
+        existing = it.get("sector")
+        if existing:
+            it["sector"] = _normalize_sector(existing)
+        else:
+            it["sector"] = TICKER_TO_SECTOR.get(it["ticker"], "Other")
+    return items
+
+
+# ---------- 1순위: Slickcharts ----------
+TR_RE = re.compile(r'<tr[^>]*>(.*?)</tr>', re.DOTALL | re.IGNORECASE)
+TD_RE = re.compile(r'<td[^>]*>(.*?)</td>', re.DOTALL | re.IGNORECASE)
+TAG_RE = re.compile(r'<[^>]+>')
+TICKER_VALID_RE = re.compile(r'^[A-Z][A-Z0-9.\-]{0,7}$')
+
+
+def _strip_html(s):
+    """HTML 태그 제거 + 엔티티 디코딩"""
+    return html_lib.unescape(TAG_RE.sub("", s)).strip()
+
+
+def _parse_table_rows(html_text):
+    """<tr>/<td> 위치 기반으로 [{ticker,name,weight}] 추출.
+    Slickcharts/Wikipedia 등 표 구조 차이를 휴리스틱으로 흡수.
+    컬럼 순서: 0=rank, 1=company, 2=ticker, 3=weight 가 일반적이지만
+    회사명·티커 위치가 바뀌어도 ticker 정규식으로 자동 식별.
+    """
+    items = []
+    for tr in TR_RE.findall(html_text):
+        tds = [_strip_html(td) for td in TD_RE.findall(tr)]
+        if len(tds) < 3:
+            continue
+
+        # rank 컬럼 (정수만) 인지 확인 — 헤더 행 제외
+        if not (tds[0].isdigit() or (tds[0] and tds[0].rstrip(".").isdigit())):
+            continue
+
+        # ticker 후보 = 셀 중 ticker 정규식에 매칭되는 첫번째
+        ticker = ""
+        ticker_idx = -1
+        for i, cell in enumerate(tds[1:], start=1):
+            if TICKER_VALID_RE.match(cell):
+                ticker = cell
+                ticker_idx = i
+                break
+        if not ticker:
+            continue
+
+        # name = ticker 셀 직전 또는 직후 중 ticker 정규식에 안 맞는 첫 번째 텍스트
+        name = ""
+        for i in (ticker_idx - 1, ticker_idx + 1, ticker_idx - 2, ticker_idx + 2):
+            if 1 <= i < len(tds) and tds[i] and not TICKER_VALID_RE.match(tds[i]):
+                name = tds[i]
+                break
+
+        # weight = ticker 이후의 첫 번째 소수점 숫자 셀
+        weight = 0.0
+        for cell in tds[ticker_idx + 1:]:
+            cleaned = cell.replace("%", "").replace(",", "").strip()
+            try:
+                w = float(cleaned)
+                # rank 같이 정수가 다시 나올 수도 있으니 소수점이 있는 경우만 채택
+                if "." in cleaned:
+                    weight = w
+                    break
+                # 소수점 없어도 0 < w < 100 이면 weight로 간주
+                if 0 < w < 100:
+                    weight = w
+                    break
+            except ValueError:
+                continue
+
+        items.append({
+            "ticker": ticker,
+            "name": name or ticker,
+            "sector": "",
+            "weight": round(weight, 4),
+        })
+    return items
+
+
+def _fetch_slickcharts():
+    resp = requests.get(
+        SLICKCHARTS_NDX_URL,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.slickcharts.com/",
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()
+    text = resp.text
+    items = _parse_table_rows(text)
+    if not items:
+        # 파싱 0건이면 응답 앞부분을 로그에 남겨 진단 가능하게
+        snippet = text[:600].replace("\n", " ")
+        logger.warning("[slickcharts] 파싱 0건 — 본문 앞 600자: %s", snippet)
+    return items
+
+
+# ---------- 3순위: Wikipedia API ----------
+WIKIPEDIA_NDX_URL = (
+    "https://en.wikipedia.org/w/api.php"
+    "?action=parse&page=Nasdaq-100&format=json&prop=text&redirects=1"
+)
+
+
+def _fetch_wikipedia():
+    resp = requests.get(
+        WIKIPEDIA_NDX_URL,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; ndx100-fetcher)"},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    html_text = data.get("parse", {}).get("text", {}).get("*", "")
+    if not html_text:
+        return []
+    items = _parse_table_rows(html_text)
+    if not items:
+        snippet = html_text[:600].replace("\n", " ")
+        logger.warning("[wikipedia] 파싱 0건 — 본문 앞 600자: %s", snippet)
+    return items
+
+
+# ---------- 2순위: Invesco CSV (URL 부활 시 자동 사용) ----------
 def _parse_qqq_csv(text):
-    """Invesco QQQ holdings CSV → [{ticker, name, sector, weight}, ...]"""
     reader = csv.DictReader(io.StringIO(text))
     items = []
     for row in reader:
-        # 컬럼명이 'Holding Ticker' / 'Ticker' 등으로 다를 수 있어 alias 시도
         ticker = (
-            row.get("Holding Ticker")
-            or row.get("Ticker")
-            or row.get("StockTicker")
-            or ""
+            row.get("Holding Ticker") or row.get("Ticker")
+            or row.get("StockTicker") or ""
         ).strip()
         name = (
-            row.get("Name")
-            or row.get("Holding")
-            or row.get("Description")
-            or ""
+            row.get("Name") or row.get("Holding") or row.get("Description") or ""
         ).strip()
         sector_raw = (row.get("Sector") or "").strip()
         weight_raw = (
-            row.get("Weight")
-            or row.get("Weight (%)")
-            or row.get("PercentageOfFund")
-            or "0"
+            row.get("Weight") or row.get("Weight (%)")
+            or row.get("PercentageOfFund") or "0"
         ).strip().replace("%", "").replace(",", "")
         try:
             weight = float(weight_raw) if weight_raw else 0.0
         except ValueError:
             weight = 0.0
-
         if not ticker:
             continue
-        # 현금/스왑/캐시컬렉터럴 등 제외
         if ticker.upper() in {"CASH", "USD", "SWAP", "-", "MMF"}:
             continue
-
         items.append({
-            "ticker": ticker,
-            "name": name,
-            "sector": _normalize_sector(sector_raw),
-            "weight": round(weight, 4),
+            "ticker": ticker, "name": name,
+            "sector": sector_raw, "weight": round(weight, 4),
         })
     return items
+
+
+def _fetch_invesco():
+    resp = requests.get(
+        QQQ_HOLDINGS_URL,
+        headers={
+            "User-Agent": "Mozilla/5.0 (compatible; ndx100-fetcher)",
+            "Accept": "text/csv,application/csv,*/*",
+        },
+        timeout=15,
+        allow_redirects=False,  # HTML 리디렉트 거부 → 깨졌는지 즉시 판별
+    )
+    if resp.status_code in (301, 302, 303, 307, 308):
+        raise ValueError(f"Invesco URL 리디렉트 ({resp.status_code}) — 다운로드 엔드포인트가 폐기됨")
+    resp.raise_for_status()
+    ctype = resp.headers.get("Content-Type", "")
+    if "csv" not in ctype.lower() and "octet" not in ctype.lower():
+        raise ValueError(f"CSV 아닌 응답 (Content-Type: {ctype})")
+    text = resp.content.decode("utf-8-sig", errors="replace")
+    return _parse_qqq_csv(text)
 
 
 @api_view(['GET'])
@@ -319,52 +517,73 @@ def _parse_qqq_csv(text):
 def ndx100_list(request):
     """
     GET /invest/ndx100/?quarter=YYYY-MM-DD
-    Invesco QQQ holdings 기반 NDX-100 구성종목을 반환.
-    응답: { items: [{ticker,name,sector,weight}], count, source, quarter }
+    응답: { items: [{ticker,name,sector,weight}], count, source, quarter, sources_tried }
     """
-    quarter = request.GET.get("quarter")  # 메타로만 echo, 분기 필터링은 미적용
+    quarter = request.GET.get("quarter")
 
     cached = cache.get(NDX100_CACHE_KEY)
     if cached:
         return JsonResponse({
-            "items": cached,
-            "count": len(cached),
-            "source": "invesco_qqq_cached",
+            "items": cached["items"],
+            "count": len(cached["items"]),
+            "source": cached["source"] + "_cached",
             "quarter": quarter,
         })
 
+    sources_tried = []
+
+    # 1순위: Slickcharts
     try:
-        resp = requests.get(
-            QQQ_HOLDINGS_URL,
-            headers={
-                "User-Agent": "Mozilla/5.0 (compatible; ndx100-fetcher)",
-                "Accept": "text/csv,application/csv,*/*",
-            },
-            timeout=15,
-            allow_redirects=True,
-        )
-        resp.raise_for_status()
-        text = resp.content.decode("utf-8-sig", errors="replace")
-        items = _parse_qqq_csv(text)
-
-        if not items:
-            raise ValueError("Invesco CSV에서 종목을 추출하지 못했습니다.")
-
-        # 가중치 내림차순
-        items.sort(key=lambda x: -x["weight"])
-
-        cache.set(NDX100_CACHE_KEY, items, NDX100_CACHE_TTL)
-        return JsonResponse({
-            "items": items,
-            "count": len(items),
-            "source": "invesco_qqq",
-            "quarter": quarter,
-        })
+        items = _fetch_slickcharts()
+        if items:
+            items = _enrich_sector(items)
+            items.sort(key=lambda x: -x["weight"])
+            cache.set(NDX100_CACHE_KEY, {"items": items, "source": "slickcharts"}, NDX100_CACHE_TTL)
+            return JsonResponse({
+                "items": items, "count": len(items),
+                "source": "slickcharts", "quarter": quarter,
+            })
+        sources_tried.append("slickcharts: empty result")
     except Exception as e:
-        logger.error("ndx100_list error: %s", e, exc_info=True)
-        return JsonResponse({
-            "error": "NDX 100 데이터 로드 실패",
-            "detail": str(e),
-            "items": [],
-            "source": "error",
-        }, status=502)
+        logger.warning("slickcharts fetch failed: %s", e)
+        sources_tried.append(f"slickcharts: {e}")
+
+    # 2순위: Invesco (현재 깨져있지만 부활 시 자동 활성화)
+    try:
+        items = _fetch_invesco()
+        if items:
+            items = _enrich_sector(items)
+            items.sort(key=lambda x: -x["weight"])
+            cache.set(NDX100_CACHE_KEY, {"items": items, "source": "invesco_qqq"}, NDX100_CACHE_TTL)
+            return JsonResponse({
+                "items": items, "count": len(items),
+                "source": "invesco_qqq", "quarter": quarter,
+            })
+        sources_tried.append("invesco_qqq: empty result")
+    except Exception as e:
+        logger.warning("invesco fetch failed: %s", e)
+        sources_tried.append(f"invesco_qqq: {e}")
+
+    # 3순위: Wikipedia API
+    try:
+        items = _fetch_wikipedia()
+        if items:
+            items = _enrich_sector(items)
+            items.sort(key=lambda x: -x["weight"] if x["weight"] else 0)
+            cache.set(NDX100_CACHE_KEY, {"items": items, "source": "wikipedia"}, NDX100_CACHE_TTL)
+            return JsonResponse({
+                "items": items, "count": len(items),
+                "source": "wikipedia", "quarter": quarter,
+            })
+        sources_tried.append("wikipedia: empty result")
+    except Exception as e:
+        logger.warning("wikipedia fetch failed: %s", e)
+        sources_tried.append(f"wikipedia: {e}")
+
+    # 모든 소스 실패
+    logger.error("ndx100_list — all sources failed: %s", sources_tried)
+    return JsonResponse({
+        "error": "NDX 100 데이터 로드 실패 (모든 소스)",
+        "sources_tried": sources_tried,
+        "items": [], "source": "error", "quarter": quarter,
+    }, status=502)

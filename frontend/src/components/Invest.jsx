@@ -6,9 +6,9 @@ import InvestIndicator from "./Inv_indicator";
 export default function Invest() {
   return (
     <div>
-      <InvestMap />
       <InvestIndicator />
       <InvestSchedule />
+      <InvestMap />
     </div>
   );
 }
