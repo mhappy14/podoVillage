@@ -15,6 +15,7 @@ import {
   Progress,
   Switch,
   Select,
+  InputNumber,
 } from "antd";
 import {
   ArrowUpOutlined,
@@ -665,6 +666,130 @@ export default function InvestIndicator() {
           </Text>
         )}
       </div>
+
+      {/* ===== 종합 시그널 산출 공식 + 인라인 가중치 편집 ===== */}
+      <Card
+        size="small"
+        title={
+          <span style={{ fontWeight: 600 }}>
+            종합 시그널 공식{" "}
+            <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>
+              (가중치 편집은 아래 카드의 게이지와 양방향 동기화됨)
+            </Text>
+          </span>
+        }
+        style={{ marginBottom: 16 }}
+        styles={{ body: { padding: 12 } }}
+      >
+        {/* 공식 박스 */}
+        <div
+          style={{
+            fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, monospace',
+            fontSize: 13,
+            background: "#fafafa",
+            padding: 10,
+            borderRadius: 4,
+            lineHeight: 1.7,
+            border: "1px solid #f0f0f0",
+          }}
+        >
+          <div>
+            <Text strong>Score</Text>
+            {" = ( "}
+            <Text style={{ color: "#3f8600" }}>Σ(긍정ᵢ × wᵢ)</Text>
+            {" − "}
+            <Text style={{ color: "#cf1322" }}>Σ(부정ᵢ × wᵢ)</Text>
+            {" ) / Σ(활성 wᵢ) × 100"}
+          </div>
+          <div style={{ marginTop: 4 }}>
+            <Text type="secondary">현재값: </Text>
+            ({summary.bullW} − {summary.bearW}) / {summary.totalW} × 100 ={" "}
+            <Text
+              strong
+              style={{
+                color:
+                  summary.color === "green" ? "#3f8600"
+                  : summary.color === "red" ? "#cf1322"
+                  : undefined,
+              }}
+            >
+              {summary.score >= 0 ? "+" : ""}{summary.score.toFixed(2)}
+            </Text>
+            {" → "}
+            <Text strong>{summary.bias}</Text>
+          </div>
+          <div style={{ marginTop: 2 }}>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              분류 임계: score &gt; +20 → 긍정 / score &lt; −20 → 부정 / 그 외 → 중립
+            </Text>
+          </div>
+        </div>
+
+        <Divider style={{ margin: "10px 0 8px 0" }} />
+
+        {/* 인라인 가중치 편집 */}
+        <Text strong style={{ fontSize: 12, display: "block", marginBottom: 6 }}>
+          지표별 가중치 (wᵢ, 0~100)
+        </Text>
+        {SECTIONS.map((section) => (
+          <div
+            key={section.title}
+            style={{
+              marginBottom: 6,
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+              alignItems: "center",
+            }}
+          >
+            <Text type="secondary" style={{ fontSize: 11, minWidth: 90 }}>
+              {section.title}
+            </Text>
+            {section.items.map((item) => {
+              const noData = !item.seriesId;
+              const enabled = itemEnabled[item.name] ?? true;
+              const dimmed = noData || !enabled;
+              const shortName =
+                item.seriesId
+                || (item.name.length > 10 ? item.name.slice(0, 10) + "…" : item.name);
+              const tooltip =
+                item.name
+                + (noData ? " (FRED 미제공 — 시그널 미반영)" : "")
+                + (!enabled && !noData ? " (지표 토글 OFF)" : "");
+              return (
+                <Tooltip key={item.name} title={tooltip}>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      opacity: dimmed ? 0.45 : 1,
+                      padding: "1px 6px",
+                      borderRadius: 3,
+                      border: "1px solid #f0f0f0",
+                      background: "#fff",
+                    }}
+                  >
+                    <Text style={{ fontSize: 11 }}>{shortName}</Text>
+                    <InputNumber
+                      size="small"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={weights[item.name] ?? 50}
+                      onChange={(v) =>
+                        setWeight(item.name, typeof v === "number" ? v : 0)
+                      }
+                      style={{ width: 58 }}
+                      controls={false}
+                    />
+                  </span>
+                </Tooltip>
+              );
+            })}
+          </div>
+        ))}
+      </Card>
 
       {/* ===== 종합 시그널 — 가로 전체, 좌(전체 시장) / 우(선택 종목) ===== */}
       <Card
