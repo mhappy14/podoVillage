@@ -25,6 +25,13 @@ import {
   AppstoreOutlined,
 } from "@ant-design/icons";
 import Column from "antd/es/table/Column";
+import {
+  SECTIONS,
+  STOCK_LEVEL_PLACEHOLDERS,
+  SECTOR_COLOR,
+  SECTOR_ABBR,
+  NDX100_FALLBACK,
+} from "./inv_indicator/constants";
 
 const { Title, Text } = Typography;
 
@@ -37,11 +44,9 @@ const { Title, Text } = Typography;
 //   (현재는 매크로 지표만 있어 모든 종목이 같은 시그널을 받음.
 //    추후 종목별 지표(MA, P/C ratio 등) 추가되면 종목별로 차별화됨)
 // · FRED 미제공 지표는 "공란" 처리
-// · CORS: vite.config.js 의 `/fredapi` 프록시 경유
+// · 데이터: 백엔드 /invest/indicator-snapshots/ 가 IndicatorSnapshot DB
+//   를 읽어 1회 응답. cron(미국 자정) + management command 로 일일 갱신.
 // =====================================================================
-
-const FRED_API_KEY = "6335426c3b0d7423815d6ca3068b1a7f";
-const FRED_BASE = "/fredapi/fred";
 
 // ---------- 날짜 헬퍼 ----------
 function getQuarterStart(date) {
@@ -65,184 +70,7 @@ function quarterLabel(date) {
   return `${date.getFullYear()}년 ${q}분기 (${fmt(date)})`;
 }
 
-// ---------- 지표 정의 ----------
-const SECTIONS = [
-  {
-    title: "1. 금리 지표",
-    items: [
-      { name: "연준 기준금리 (Fed Funds Upper)", seriesId: "DFEDTARU", unit: "%", interpret: "lower-bullish" },
-      { name: "미 국채 10년물 금리", seriesId: "DGS10", unit: "%", interpret: "lower-bullish" },
-      { name: "장단기 금리차 (10Y-2Y)", seriesId: "T10Y2Y", unit: "%p", interpret: "higher-bullish" },
-      { name: "실질금리 (10Y TIPS)", seriesId: "DFII10", unit: "%", interpret: "lower-bullish" },
-    ],
-  },
-  {
-    title: "2. 시장 지표",
-    items: [
-      { name: "SIFMA 채권 발행 통계", seriesId: null, unit: "$B", interpret: "higher-bullish",
-        note: "SIFMA 자체 발표 — FRED 미제공" },
-      { name: "TIC 데이터 (해외 자금흐름)", seriesId: null, unit: "$B", interpret: "higher-bullish",
-        note: "美 재무부 TIC — FRED 미제공" },
-      { name: "MOVE 지수 (채권 변동성)", seriesId: null, unit: "index", interpret: "lower-bullish",
-        note: "ICE BofA MOVE — 라이선스 데이터, FRED 미제공" },
-      { name: "COT 리포트 (포지셔닝)", seriesId: null, unit: "계약", interpret: "higher-bullish",
-        note: "CFTC 발표 — FRED 미제공" },
-    ],
-  },
-  {
-    title: "3. 유동성 지표",
-    items: [
-      { name: "M2 통화량", seriesId: "M2SL", unit: "$B", interpret: "higher-bullish" },
-      { name: "연준 순유동성 (Net Liquidity)", seriesId: null, unit: "$B", interpret: "higher-bullish",
-        note: "WALCL − WTREGEN − RRPONTSYD 직접 계산 필요" },
-      { name: "SOFR 금리", seriesId: "SOFR", unit: "%", interpret: "lower-bullish" },
-      { name: "달러 인덱스 (Broad USD)", seriesId: "DTWEXBGS", unit: "index", interpret: "lower-bullish",
-        note: "정통 DXY는 ICE 라이선스 — FRED는 광역지수만" },
-    ],
-  },
-  {
-    title: "4. 경기 지표",
-    items: [
-      { name: "소비자물가지수 (CPI)", seriesId: "CPIAUCSL", unit: "index", interpret: "lower-bullish" },
-      { name: "ISM 제조업 PMI", seriesId: null, unit: "index", interpret: "higher-bullish",
-        note: "ISM 라이선스 — FRED 미제공" },
-      { name: "ISM 서비스업 PMI", seriesId: null, unit: "index", interpret: "higher-bullish",
-        note: "ISM 라이선스 — FRED 미제공" },
-      { name: "금 가격 (London PM Fix)", seriesId: "GOLDAMGBD228NLBM", unit: "$/oz", interpret: "higher-bullish" },
-      { name: "구리 가격 (Dr. Copper)", seriesId: "PCOPPUSDM", unit: "$/MT", interpret: "higher-bullish" },
-      { name: "반도체 사이클 (SOX)", seriesId: null, unit: "index", interpret: "higher-bullish",
-        note: "Philadelphia SOX — Nasdaq 데이터, FRED 미제공" },
-    ],
-  },
-  {
-    title: "5. 신용 지표",
-    items: [
-      { name: "하이일드 스프레드 (BofA)", seriesId: "BAMLH0A0HYM2", unit: "%", interpret: "lower-bullish" },
-      { name: "SLOOS 대출 태도 (C&I)", seriesId: "DRTSCILM", unit: "%", interpret: "lower-bullish",
-        note: "값 낮을수록 대출 완화 → 호재" },
-    ],
-  },
-  {
-    title: "6. 심리 지표",
-    items: [
-      { name: "VIX 지수 (공포 지수)", seriesId: "VIXCLS", unit: "index", interpret: "lower-bullish" },
-      { name: "주식/채권 상대강도 (SPY/TLT)", seriesId: null, unit: "ratio", interpret: "higher-bullish",
-        note: "ETF 가격 — FRED 미제공" },
-      { name: "EPFR / ICI 펀드 플로우", seriesId: null, unit: "$B", interpret: "higher-bullish",
-        note: "상업/협회 데이터 — FRED 미제공" },
-    ],
-  },
-];
-
-const STOCK_LEVEL_PLACEHOLDERS = [
-  { name: "이동평균선 (5/20/60/120일)", note: "정배열·이격도" },
-  { name: "거래강도 (Volume Strength)", note: "거래량 회전율 / OBV" },
-  { name: "Put/Call Ratio", note: "CBOE 옵션 거래 비율" },
-  { name: "신고가/신저가 비율", note: "52W High vs Low Ratio" },
-];
-
-// 백엔드 미구현 시 사용할 fallback. 운영 시 /invest/ndx100/ 엔드포인트가 우선.
-// 섹터는 GICS 분류 (TradingView 히트맵 grouping:"sector" 와 동일 체계)
-const SECTOR_COLOR = {
-  "Information Technology": "blue",
-  "Communication Services": "geekblue",
-  "Consumer Discretionary": "purple",
-  "Consumer Staples": "magenta",
-  "Health Care": "cyan",
-  "Industrials": "gold",
-  "Utilities": "lime",
-  "Energy": "orange",
-  "Materials": "volcano",
-  "Financials": "green",
-};
-// 셀렉터 옵션 앞에 표시할 영어 약자 (가독성용)
-const SECTOR_ABBR = {
-  "Information Technology": "IT",
-  "Communication Services": "COMM",
-  "Consumer Discretionary": "DISC",
-  "Consumer Staples": "STAP",
-  "Health Care": "HC",
-  "Industrials": "IND",
-  "Utilities": "UTIL",
-  "Energy": "ENGY",
-  "Materials": "MAT",
-  "Financials": "FIN",
-};
-const NDX100_FALLBACK = [
-  ["AAPL", "Apple", "Information Technology"], ["MSFT", "Microsoft", "Information Technology"],
-  ["NVDA", "Nvidia", "Information Technology"], ["AMZN", "Amazon", "Consumer Discretionary"],
-  ["GOOGL", "Alphabet A", "Communication Services"], ["GOOG", "Alphabet C", "Communication Services"],
-  ["META", "Meta Platforms", "Communication Services"], ["AVGO", "Broadcom", "Information Technology"],
-  ["TSLA", "Tesla", "Consumer Discretionary"], ["COST", "Costco", "Consumer Staples"],
-  ["NFLX", "Netflix", "Communication Services"], ["ADBE", "Adobe", "Information Technology"],
-  ["AMD", "Advanced Micro Devices", "Information Technology"], ["CSCO", "Cisco", "Information Technology"],
-  ["PEP", "PepsiCo", "Consumer Staples"], ["TMUS", "T-Mobile", "Communication Services"],
-  ["INTU", "Intuit", "Information Technology"], ["AMGN", "Amgen", "Health Care"],
-  ["TXN", "Texas Instruments", "Information Technology"], ["QCOM", "Qualcomm", "Information Technology"],
-  ["ISRG", "Intuitive Surgical", "Health Care"], ["AMAT", "Applied Materials", "Information Technology"],
-  ["BKNG", "Booking Holdings", "Consumer Discretionary"], ["HON", "Honeywell", "Industrials"],
-  ["CMCSA", "Comcast", "Communication Services"], ["VRTX", "Vertex Pharmaceuticals", "Health Care"],
-  ["SBUX", "Starbucks", "Consumer Discretionary"], ["GILD", "Gilead Sciences", "Health Care"],
-  ["MU", "Micron", "Information Technology"], ["LRCX", "Lam Research", "Information Technology"],
-  ["ADI", "Analog Devices", "Information Technology"], ["MDLZ", "Mondelez", "Consumer Staples"],
-  ["INTC", "Intel", "Information Technology"], ["REGN", "Regeneron", "Health Care"],
-  ["ADP", "ADP", "Industrials"], ["KLAC", "KLA", "Information Technology"],
-  ["PANW", "Palo Alto Networks", "Information Technology"], ["SNPS", "Synopsys", "Information Technology"],
-  ["CDNS", "Cadence", "Information Technology"], ["ABNB", "Airbnb", "Consumer Discretionary"],
-  ["CRWD", "CrowdStrike", "Information Technology"], ["MELI", "MercadoLibre", "Consumer Discretionary"],
-  ["MAR", "Marriott", "Consumer Discretionary"], ["FTNT", "Fortinet", "Information Technology"],
-  ["ORLY", "O'Reilly Automotive", "Consumer Discretionary"], ["ASML", "ASML", "Information Technology"],
-  ["ROP", "Roper", "Industrials"], ["MRVL", "Marvell", "Information Technology"],
-  ["DASH", "DoorDash", "Consumer Discretionary"], ["NXPI", "NXP", "Information Technology"],
-  ["PCAR", "PACCAR", "Industrials"], ["CTAS", "Cintas", "Industrials"],
-  ["ADSK", "Autodesk", "Information Technology"], ["MNST", "Monster Beverage", "Consumer Staples"],
-  ["AEP", "American Electric Power", "Utilities"], ["CHTR", "Charter", "Communication Services"],
-  ["MCHP", "Microchip", "Information Technology"], ["WDAY", "Workday", "Information Technology"],
-  ["AZN", "AstraZeneca", "Health Care"], ["PYPL", "PayPal", "Financials"],
-  ["KDP", "Keurig Dr Pepper", "Consumer Staples"], ["CPRT", "Copart", "Industrials"],
-  ["EXC", "Exelon", "Utilities"], ["IDXX", "IDEXX", "Health Care"],
-  ["DDOG", "Datadog", "Information Technology"], ["CSGP", "CoStar Group", "Industrials"],
-  ["ROST", "Ross Stores", "Consumer Discretionary"], ["FANG", "Diamondback Energy", "Energy"],
-  ["FAST", "Fastenal", "Industrials"], ["GEHC", "GE HealthCare", "Health Care"],
-  ["KHC", "Kraft Heinz", "Consumer Staples"], ["BKR", "Baker Hughes", "Energy"],
-  ["CCEP", "Coca-Cola Europacific", "Consumer Staples"], ["ODFL", "Old Dominion", "Industrials"],
-  ["ON", "ON Semiconductor", "Information Technology"], ["PAYX", "Paychex", "Industrials"],
-  ["EA", "Electronic Arts", "Communication Services"], ["VRSK", "Verisk", "Industrials"],
-  ["BIIB", "Biogen", "Health Care"], ["XEL", "Xcel Energy", "Utilities"],
-  ["ZS", "Zscaler", "Information Technology"], ["ANSS", "Ansys", "Information Technology"],
-  ["CTSH", "Cognizant", "Information Technology"], ["CDW", "CDW", "Information Technology"],
-  ["TTD", "The Trade Desk", "Information Technology"], ["LULU", "Lululemon", "Consumer Discretionary"],
-  ["GFS", "GlobalFoundries", "Information Technology"], ["DXCM", "DexCom", "Health Care"],
-  ["MDB", "MongoDB", "Information Technology"], ["ARM", "Arm Holdings", "Information Technology"],
-  ["WBD", "Warner Bros Discovery", "Communication Services"], ["TEAM", "Atlassian", "Information Technology"],
-  ["DLTR", "Dollar Tree", "Consumer Discretionary"], ["LIN", "Linde", "Materials"],
-  ["PDD", "PDD Holdings", "Consumer Discretionary"], ["PLTR", "Palantir", "Information Technology"],
-  ["APP", "AppLovin", "Information Technology"], ["MSTR", "MicroStrategy", "Information Technology"],
-  ["CEG", "Constellation Energy", "Utilities"], ["TTWO", "Take-Two", "Communication Services"],
-  ["CSX", "CSX", "Industrials"], ["ALGN", "Align Technology", "Health Care"],
-].map(([ticker, name, sector]) => ({ ticker, name, sector }));
-
-// ---------- FRED 호출 ----------
-async function fetchFredAt(seriesId, endDate) {
-  try {
-    const { data } = await axios.get(`${FRED_BASE}/series/observations`, {
-      params: {
-        series_id: seriesId,
-        api_key: FRED_API_KEY,
-        file_type: "json",
-        sort_order: "desc",
-        observation_end: fmt(endDate),
-        limit: 60,
-      },
-      timeout: 15000,
-    });
-    const obs = (data?.observations || []).find((o) => o.value && o.value !== ".");
-    return obs ? { date: obs.date, value: parseFloat(obs.value) } : null;
-  } catch (e) {
-    console.warn(`[FRED] ${seriesId} @ ${fmt(endDate)} 실패:`, e?.message);
-    return null;
-  }
-}
+// 상수 정의는 ./inv_indicator/constants.js 로 분리
 
 // ---------- 시그널 계산 ----------
 function computeSignal(item, current, ref) {
@@ -357,6 +185,43 @@ function WeightGauge({ value, onChange, min = 0, max = 100 }) {
         가중치 {value}
       </div>
     </div>
+  );
+}
+
+// ---------- 가중치 InputNumber + 마우스 휠 ----------
+// React 의 onWheel 은 passive 라 preventDefault 가 안 먹어서
+// 직접 addEventListener 로 등록
+function WeightInput({ value, onChange, min = 0, max = 100, step = 5, ...rest }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const handler = (e) => {
+      e.preventDefault();
+      const cur = typeof value === "number" ? value : 50;
+      const delta = e.deltaY < 0 ? step : -step;
+      onChange(Math.min(max, Math.max(min, cur + delta)));
+    };
+    node.addEventListener("wheel", handler, { passive: false });
+    return () => node.removeEventListener("wheel", handler);
+  }, [value, onChange, min, max, step]);
+  return (
+    <span
+      ref={ref}
+      style={{ display: "inline-block" }}
+      title="입력란 위에서 마우스 휠로 ±5"
+    >
+      <InputNumber
+        size="small"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(v) => onChange(typeof v === "number" ? v : 0)}
+        controls={false}
+        {...rest}
+      />
+    </span>
   );
 }
 
@@ -489,6 +354,37 @@ export default function InvestIndicator() {
   const [ndxSource, setNdxSource] = useState("fallback"); // 'backend' | 'fallback'
   const [selectedStock, setSelectedStock] = useState(null);
 
+  // NY 자정까지 남은 시간 (1초마다 갱신) — 데이터 갱신 cron 시각
+  const [ttUpdate, setTtUpdate] = useState("--:--:--");
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date();
+      // NY 현재 시각 (DST 자동 반영)
+      const nyParts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        hour12: false,
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+      }).formatToParts(now);
+      const get = (t) => nyParts.find((p) => p.type === t)?.value;
+      const h = parseInt(get("hour"), 10);
+      const m = parseInt(get("minute"), 10);
+      const s = parseInt(get("second"), 10);
+      // 자정까지 남은 초
+      const elapsed = h * 3600 + m * 60 + s;
+      const remaining = 86400 - elapsed;
+      const rh = Math.floor(remaining / 3600);
+      const rm = Math.floor((remaining % 3600) / 60);
+      const rs = remaining % 60;
+      setTtUpdate(
+        `${String(rh).padStart(2, "0")}:${String(rm).padStart(2, "0")}:${String(rs).padStart(2, "0")}`
+      );
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -519,25 +415,34 @@ export default function InvestIndicator() {
     return () => { cancelled = true; };
   }, [refDate]);
 
-  // FRED 데이터 호출 (현재 / 전 분기 / 전년 동분기)
+  // 백엔드 indicator-snapshots 단일 호출 (DB 캐시 → 매일 자정 업데이트)
   useEffect(() => {
     let cancelled = false;
     async function run() {
       setLoading(true);
       setError(null);
-      const items = SECTIONS.flatMap((s) => s.items).filter((i) => i.seriesId);
       try {
-        const entries = await Promise.all(
-          items.map(async (item) => {
-            const [cur, pq, py] = await Promise.all([
-              fetchFredAt(item.seriesId, refDate),
-              fetchFredAt(item.seriesId, prevQDate),
-              fetchFredAt(item.seriesId, prevYDate),
-            ]);
-            return [item.seriesId, { current: cur, prevQ: pq, prevY: py }];
-          })
-        );
-        if (!cancelled) setResults(Object.fromEntries(entries));
+        const { data } = await axios.get("/invest/indicator-snapshots/", {
+          params: { quarter: fmt(refDate) },
+          timeout: 30000, // cold-start 시 fetch 가 느릴 수 있음
+        });
+        // 응답: { indicators: { KEY: { current:{date,value,source}, prev_q:{...}, prev_y:{...} } } }
+        const inds = data?.indicators || {};
+        const shaped = {};
+        Object.entries(inds).forEach(([key, anchors]) => {
+          shaped[key] = {
+            current: anchors.current && anchors.current.value !== null
+              ? { date: anchors.current.date, value: anchors.current.value }
+              : null,
+            prevQ: anchors.prev_q && anchors.prev_q.value !== null
+              ? { date: anchors.prev_q.date, value: anchors.prev_q.value }
+              : null,
+            prevY: anchors.prev_y && anchors.prev_y.value !== null
+              ? { date: anchors.prev_y.date, value: anchors.prev_y.value }
+              : null,
+          };
+        });
+        if (!cancelled) setResults(shaped);
       } catch (e) {
         if (!cancelled) setError(e?.message || "데이터 로드 실패");
       } finally {
@@ -644,17 +549,24 @@ export default function InvestIndicator() {
         </div>
 
         <Row gutter={8} style={{ marginTop: 8 }}>
-          <Col span={8}>
+          <Col span={6}>
             <Text type="secondary" style={{ fontSize: 11 }}>
               · 기준일: {quarterLabel(refDate)}
             </Text>
           </Col>
-          <Col span={8}>
+          <Col span={6}>
+            <Tooltip title="다음 데이터 업데이트는 미국 동부(NY) 자정에 cron 으로 실행됩니다 (DST 자동 반영)">
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                · Data Update: NY 00:00 ({ttUpdate})
+              </Text>
+            </Tooltip>
+          </Col>
+          <Col span={6}>
             <Text type="secondary" style={{ fontSize: 11 }}>
               · QoQ: {quarterLabel(prevQDate)}
             </Text>
           </Col>
-          <Col span={8}>
+          <Col span={6}>
             <Text type="secondary" style={{ fontSize: 11 }}>
               · YoY: {quarterLabel(prevYDate)}
             </Text>
@@ -667,268 +579,255 @@ export default function InvestIndicator() {
         )}
       </div>
 
-      {/* ===== 종합 시그널 산출 공식 + 인라인 가중치 편집 ===== */}
-      <Card
-        size="small"
-        title={
-          <span style={{ fontWeight: 600 }}>
-            종합 시그널 공식{" "}
-            <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>
-              (가중치 편집은 아래 카드의 게이지와 양방향 동기화됨)
-            </Text>
-          </span>
-        }
-        style={{ marginBottom: 16 }}
-        styles={{ body: { padding: 12 } }}
-      >
-        {/* 공식 박스 */}
-        <div
-          style={{
-            fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, monospace',
-            fontSize: 13,
-            background: "#fafafa",
-            padding: 10,
-            borderRadius: 4,
-            lineHeight: 1.7,
-            border: "1px solid #f0f0f0",
-          }}
-        >
-          <div>
-            <Text strong>Score</Text>
-            {" = ( "}
-            <Text style={{ color: "#3f8600" }}>Σ(긍정ᵢ × wᵢ)</Text>
-            {" − "}
-            <Text style={{ color: "#cf1322" }}>Σ(부정ᵢ × wᵢ)</Text>
-            {" ) / Σ(활성 wᵢ) × 100"}
-          </div>
-          <div style={{ marginTop: 4 }}>
-            <Text type="secondary">현재값: </Text>
-            ({summary.bullW} − {summary.bearW}) / {summary.totalW} × 100 ={" "}
-            <Text
-              strong
+      {/* ===== [2/3, 1/3] — 좌:컴팩트 시그널+섹터 / 우:공식+가중치 ===== */}
+      <Row gutter={[12, 12]} style={{ marginBottom: 16 }} align="stretch">
+        {/* === 좌측 2/3: 컴팩트 시그널 (위) + 섹터 그리드 (아래) === */}
+        <Col xs={24} md={16} style={{ display: "flex", flexDirection: "column" }}>
+          {/* 위: 전체시장 + 종목별 (컴팩트, 1줄) */}
+          <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+            <Col span={12}>
+              <Card
+                size="small"
+                styles={{ body: { padding: "8px 12px" } }}
+                style={{
+                  borderColor:
+                    summary.color === "green" ? "#52c41a"
+                    : summary.color === "red" ? "#ff4d4f" : undefined,
+                }}
+              >
+                <Text type="secondary" style={{ fontSize: 10, letterSpacing: 1 }}>
+                  전체 시장
+                </Text>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                  <Title level={5} style={{ margin: 0 }}>{summary.bias}</Title>
+                  <Tag color={summary.color} style={{ marginRight: 0, fontSize: 11 }}>
+                    {summary.score >= 0 ? "+" : ""}{summary.score.toFixed(0)}
+                  </Tag>
+                </div>
+                <Text type="secondary" style={{ fontSize: 10, display: "block", marginTop: 2 }}>
+                  {summary.count}개 · 긍{summary.bullW} 부{summary.bearW} 중{summary.neutW}
+                </Text>
+              </Card>
+            </Col>
+            <Col span={12}>
+              <Card
+                size="small"
+                styles={{ body: { padding: "8px 12px" } }}
+              >
+                {selectedStock ? (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                      <Text type="secondary" style={{ fontSize: 10, letterSpacing: 1 }}>
+                        {selectedStock.ticker}
+                      </Text>
+                      {selectedSector && (
+                        <Tag color={SECTOR_COLOR[selectedSector] || "default"} style={{ marginRight: 0, fontSize: 9, padding: "0 4px", lineHeight: "14px" }}>
+                          {SECTOR_ABBR[selectedSector] || "ETC"}
+                        </Tag>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                      <Title level={5} style={{ margin: 0 }}>{summary.bias}</Title>
+                      <Tag color={summary.color} style={{ marginRight: 0, fontSize: 11 }}>
+                        {summary.score >= 0 ? "+" : ""}{summary.score.toFixed(0)}
+                      </Tag>
+                    </div>
+                    <Text type="secondary" style={{ fontSize: 10, display: "block", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {selectedStock.name}
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Text type="secondary" style={{ fontSize: 10, letterSpacing: 1 }}>
+                      선택 종목
+                    </Text>
+                    <div style={{ marginTop: 2 }}>
+                      <Title level={5} type="secondary" style={{ margin: 0, fontWeight: 400 }}>
+                        종목 미선택
+                      </Title>
+                    </div>
+                    <Text type="secondary" style={{ fontSize: 10, display: "block", marginTop: 2 }}>
+                      상단 셀렉터에서 NDX 100 종목 선택
+                    </Text>
+                  </>
+                )}
+              </Card>
+            </Col>
+          </Row>
+
+          {/* 아래: 섹터별 시그널 (다중 줄 wrap, 풀 라벨) */}
+          <Card
+            size="small"
+            style={{ flex: 1 }}
+            styles={{ body: { padding: 12 } }}
+            title={
+              <span style={{ fontWeight: 600 }}>
+                섹터별 시그널{" "}
+                <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>
+                  (NDX 100 구성종목 기반 · {sectorBreakdown.length}개)
+                </Text>
+              </span>
+            }
+          >
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {sectorBreakdown.map((s) => (
+                <div
+                  key={s.sector}
+                  style={{
+                    flex: "1 1 calc(20% - 8px)",
+                    minWidth: 130,
+                    maxWidth: 220,
+                    padding: "8px 10px",
+                    border: "1px solid #f0f0f0",
+                    borderLeft: `3px solid ${
+                      s.color === "green" ? "#52c41a"
+                      : s.color === "red" ? "#ff4d4f" : "#faad14"
+                    }`,
+                    borderRadius: 4,
+                    background: "#fafafa",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
+                    <Tag
+                      color={SECTOR_COLOR[s.sector] || "default"}
+                      style={{ marginRight: 0, fontSize: 10 }}
+                    >
+                      {SECTOR_ABBR[s.sector] || "ETC"}
+                    </Tag>
+                    <Tag color={s.color} style={{ marginRight: 0, fontSize: 11, fontWeight: 600 }}>
+                      {s.score >= 0 ? "+" : ""}{s.score.toFixed(0)}
+                    </Tag>
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.3 }}>
+                    <Text strong style={{ fontSize: 11 }}>{s.sector}</Text>
+                  </div>
+                  <Text type="secondary" style={{ fontSize: 10 }}>
+                    {s.count}종목 · 비중 {s.weight.toFixed(1)}%
+                  </Text>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </Col>
+
+        {/* === 우측 1/3: 공식 + 인라인 가중치 === */}
+        <Col xs={24} md={8} style={{ display: "flex" }}>
+          <Card
+            size="small"
+            style={{ flex: 1 }}
+            styles={{ body: { padding: 12 } }}
+            title={
+              <span style={{ fontWeight: 600, fontSize: 13 }}>
+                공식{" "}
+                <Text type="secondary" style={{ fontSize: 10, fontWeight: 400 }}>
+                  (가중치 ↔ 게이지 동기화)
+                </Text>
+              </span>
+            }
+          >
+            {/* 컴팩트 공식 박스 */}
+            <div
               style={{
-                color:
-                  summary.color === "green" ? "#3f8600"
-                  : summary.color === "red" ? "#cf1322"
-                  : undefined,
+                fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace',
+                fontSize: 11,
+                background: "#fafafa",
+                padding: 6,
+                borderRadius: 4,
+                lineHeight: 1.5,
+                border: "1px solid #f0f0f0",
+                marginBottom: 8,
               }}
             >
-              {summary.score >= 0 ? "+" : ""}{summary.score.toFixed(2)}
-            </Text>
-            {" → "}
-            <Text strong>{summary.bias}</Text>
-          </div>
-          <div style={{ marginTop: 2 }}>
-            <Text type="secondary" style={{ fontSize: 11 }}>
-              분류 임계: score &gt; +20 → 긍정 / score &lt; −20 → 부정 / 그 외 → 중립
-            </Text>
-          </div>
-        </div>
+              <div>
+                <Text strong style={{ fontSize: 11 }}>S</Text>
+                {" = ("}
+                <Text style={{ color: "#3f8600", fontSize: 11 }}>Σ긍정ᵢwᵢ</Text>
+                {" − "}
+                <Text style={{ color: "#cf1322", fontSize: 11 }}>Σ부정ᵢwᵢ</Text>
+                {") / Σwᵢ × 100"}
+              </div>
+              <div>
+                <Text type="secondary" style={{ fontSize: 11 }}>= </Text>
+                ({summary.bullW}−{summary.bearW})/{summary.totalW}×100 ={" "}
+                <Text
+                  strong
+                  style={{
+                    fontSize: 11,
+                    color:
+                      summary.color === "green" ? "#3f8600"
+                      : summary.color === "red" ? "#cf1322"
+                      : undefined,
+                  }}
+                >
+                  {summary.score >= 0 ? "+" : ""}{summary.score.toFixed(1)}
+                </Text>
+              </div>
+              <div>
+                <Text type="secondary" style={{ fontSize: 10 }}>
+                  임계: |S|&gt;20 → 긍정/부정, 외 → 중립
+                </Text>
+              </div>
+            </div>
 
-        <Divider style={{ margin: "10px 0 8px 0" }} />
-
-        {/* 인라인 가중치 편집 */}
-        <Text strong style={{ fontSize: 12, display: "block", marginBottom: 6 }}>
-          지표별 가중치 (wᵢ, 0~100)
-        </Text>
-        {SECTIONS.map((section) => (
-          <div
-            key={section.title}
-            style={{
-              marginBottom: 6,
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 6,
-              alignItems: "center",
-            }}
-          >
-            <Text type="secondary" style={{ fontSize: 11, minWidth: 90 }}>
-              {section.title}
+            {/* 컴팩트 인라인 가중치 — 카테고리당 1줄 */}
+            <Text strong style={{ fontSize: 11, display: "block", marginBottom: 4 }}>
+              지표별 가중치 wᵢ
             </Text>
-            {section.items.map((item) => {
-              const noData = !item.seriesId;
-              const enabled = itemEnabled[item.name] ?? true;
-              const dimmed = noData || !enabled;
-              const shortName =
-                item.seriesId
-                || (item.name.length > 10 ? item.name.slice(0, 10) + "…" : item.name);
-              const tooltip =
-                item.name
-                + (noData ? " (FRED 미제공 — 시그널 미반영)" : "")
-                + (!enabled && !noData ? " (지표 토글 OFF)" : "");
+            {SECTIONS.map((section) => {
+              const sectionShort = section.title.replace(/^\d+\.\s/, "").replace(" 지표", "");
               return (
-                <Tooltip key={item.name} title={tooltip}>
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 4,
-                      opacity: dimmed ? 0.45 : 1,
-                      padding: "1px 6px",
-                      borderRadius: 3,
-                      border: "1px solid #f0f0f0",
-                      background: "#fff",
-                    }}
-                  >
-                    <Text style={{ fontSize: 11 }}>{shortName}</Text>
-                    <InputNumber
-                      size="small"
-                      min={0}
-                      max={100}
-                      step={5}
-                      value={weights[item.name] ?? 50}
-                      onChange={(v) =>
-                        setWeight(item.name, typeof v === "number" ? v : 0)
-                      }
-                      style={{ width: 58 }}
-                      controls={false}
-                    />
-                  </span>
-                </Tooltip>
+                <div
+                  key={section.title}
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 4,
+                    alignItems: "center",
+                    marginBottom: 3,
+                  }}
+                >
+                  <Text type="secondary" style={{ fontSize: 10, minWidth: 38, fontWeight: 600 }}>
+                    {sectionShort}
+                  </Text>
+                  {section.items.map((item) => {
+                    const noData = !item.seriesId;
+                    const enabled = itemEnabled[item.name] ?? true;
+                    const dimmed = noData || !enabled;
+                    const shortName = item.seriesId
+                      ? (item.seriesId.length > 7 ? item.seriesId.slice(0, 6) + "…" : item.seriesId)
+                      : (item.name.split(/[\s(]/)[0].slice(0, 6));
+                    const tooltip =
+                      item.name
+                      + (noData ? " (FRED 미제공)" : "")
+                      + (!enabled && !noData ? " (OFF)" : "");
+                    return (
+                      <Tooltip key={item.name} title={tooltip}>
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 2,
+                            opacity: dimmed ? 0.4 : 1,
+                          }}
+                        >
+                          <Text style={{ fontSize: 10, fontFamily: "ui-monospace, monospace" }}>
+                            {shortName}
+                          </Text>
+                          <WeightInput
+                            value={weights[item.name] ?? 50}
+                            onChange={(v) => setWeight(item.name, v)}
+                            style={{ width: 46 }}
+                          />
+                        </span>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
               );
             })}
-          </div>
-        ))}
-      </Card>
-
-      {/* ===== 종합 시그널 — 가로 전체, 좌(전체 시장) / 우(선택 종목) ===== */}
-      <Card
-        size="small"
-        style={{
-          marginBottom: 16,
-          borderColor:
-            summary.color === "green" ? "#52c41a"
-            : summary.color === "red" ? "#ff4d4f" : undefined,
-        }}
-        styles={{ body: { padding: 16 } }}
-      >
-        <Row gutter={[24, 16]}>
-          {/* 좌측: 전체 시장 */}
-          <Col xs={24} md={12} style={{ borderRight: "1px solid #f0f0f0" }}>
-            <Text type="secondary" style={{ fontSize: 11, letterSpacing: 1 }}>
-              전체 시장 종합 시그널 (가중평균)
-            </Text>
-            <Space align="center" style={{ marginTop: 6 }}>
-              <Title level={2} style={{ margin: 0 }}>{summary.bias}</Title>
-              <Tag color={summary.color} style={{ fontSize: 14, padding: "2px 8px" }}>
-                {summary.score >= 0 ? "+" : ""}{summary.score.toFixed(0)}점
-              </Tag>
-            </Space>
-            <Progress
-              percent={summary.progressPct}
-              showInfo={false}
-              strokeColor={
-                summary.color === "green" ? "#52c41a"
-                : summary.color === "red" ? "#ff4d4f" : "#faad14"
-              }
-              style={{ marginTop: 6 }}
-            />
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              집계 {summary.count}개 · 총 가중치 {summary.totalW}
-              {" · "}긍정W {summary.bullW} / 부정W {summary.bearW} / 중립W {summary.neutW}
-            </Text>
-          </Col>
-
-          {/* 우측: 선택 종목 */}
-          <Col xs={24} md={12}>
-            {selectedStock ? (
-              <>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <Text type="secondary" style={{ fontSize: 11, letterSpacing: 1 }}>
-                    {selectedLabel}
-                  </Text>
-                  {selectedSector && (
-                    <Tag color={SECTOR_COLOR[selectedSector] || "default"} style={{ marginRight: 0 }}>
-                      [{SECTOR_ABBR[selectedSector] || "ETC"}] {selectedSector}
-                    </Tag>
-                  )}
-                </div>
-                <Space align="center" style={{ marginTop: 6 }}>
-                  <Title level={2} style={{ margin: 0 }}>{summary.bias}</Title>
-                  <Tag color={summary.color} style={{ fontSize: 14, padding: "2px 8px" }}>
-                    {summary.score >= 0 ? "+" : ""}{summary.score.toFixed(0)}점
-                  </Tag>
-                </Space>
-                <Progress
-                  percent={summary.progressPct}
-                  showInfo={false}
-                  strokeColor={
-                    summary.color === "green" ? "#52c41a"
-                    : summary.color === "red" ? "#ff4d4f" : "#faad14"
-                  }
-                  style={{ marginTop: 6 }}
-                />
-                <Text type="secondary" style={{ fontSize: 10 }}>
-                  ※ 현재는 매크로 지표 기반 — 종목별 지표(MA, P/C 등) 추가 시 종목별 차별화
-                </Text>
-              </>
-            ) : (
-              <div style={{ height: "100%", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-                <Text type="secondary" style={{ fontSize: 11, letterSpacing: 1 }}>
-                  선택 종목 시그널
-                </Text>
-                <Title level={3} type="secondary" style={{ margin: "6px 0 0 0", fontWeight: 400 }}>
-                  종목 미선택
-                </Title>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  상단 셀렉터에서 NDX 100 종목을 선택하면 해당 종목 시그널이 여기에 표시됩니다.
-                </Text>
-              </div>
-            )}
-          </Col>
-        </Row>
-      </Card>
-
-      {/* ===== 섹터별 시그널 — 한 줄(자동 wrap) ===== */}
-      <Card
-        size="small"
-        style={{ marginBottom: 16 }}
-        title={
-          <span style={{ fontWeight: 600 }}>
-            섹터별 시그널{" "}
-            <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>
-              (NDX 100 구성종목 기반 · {sectorBreakdown.length}개 섹터)
-            </Text>
-          </span>
-        }
-        styles={{ body: { padding: 12 } }}
-      >
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {sectorBreakdown.map((s) => (
-            <div
-              key={s.sector}
-              style={{
-                flex: "1 1 150px",
-                minWidth: 140,
-                maxWidth: 220,
-                padding: "8px 10px",
-                border: "1px solid #f0f0f0",
-                borderLeft: `3px solid ${
-                  s.color === "green" ? "#52c41a"
-                  : s.color === "red" ? "#ff4d4f" : "#faad14"
-                }`,
-                borderRadius: 4,
-                background: "#fafafa",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
-                <Tag color={SECTOR_COLOR[s.sector] || "default"} style={{ marginRight: 0, fontSize: 10 }}>
-                  {SECTOR_ABBR[s.sector] || "ETC"}
-                </Tag>
-                <Tag color={s.color} style={{ marginRight: 0, fontSize: 11, fontWeight: 600 }}>
-                  {s.score >= 0 ? "+" : ""}{s.score.toFixed(0)}
-                </Tag>
-              </div>
-              <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.3 }}>
-                <Text strong style={{ fontSize: 12 }}>{s.sector}</Text>
-              </div>
-              <Text type="secondary" style={{ fontSize: 10 }}>
-                {s.count}종목 · 비중 {s.weight.toFixed(1)}%
-              </Text>
-            </div>
-          ))}
-        </div>
-      </Card>
+          </Card>
+        </Col>
+      </Row>
 
       {loading && (
         <div style={{ textAlign: "center", padding: 16 }}>

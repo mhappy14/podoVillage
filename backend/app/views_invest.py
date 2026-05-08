@@ -587,3 +587,231 @@ def ndx100_list(request):
         "sources_tried": sources_tried,
         "items": [], "source": "error", "quarter": quarter,
     }, status=502)
+
+# =====================================================================
+# 매크로 지표 스냅샷 (FRED + yfinance + 합성) — 백엔드 저장 + 일일 갱신
+# =====================================================================
+from app.models import IndicatorSnapshot
+from django.utils.dateparse import parse_date as _parse_date
+import datetime as _dt
+
+
+# 지표 정의 — 프론트의 SECTIONS 와 동일 구조의 source-of-truth
+# kind: 'fred' / 'yfinance' / 'computed' / 'unavailable'
+INDICATOR_DEFS = [
+    # 1. 금리
+    {"key": "DFEDTARU", "kind": "fred", "ref": "DFEDTARU"},
+    {"key": "DGS10", "kind": "fred", "ref": "DGS10"},
+    {"key": "T10Y2Y", "kind": "fred", "ref": "T10Y2Y"},
+    {"key": "DFII10", "kind": "fred", "ref": "DFII10"},
+
+    # 2. 시장 — 대부분 라이선스, MOVE만 yfinance 시도
+    {"key": "SIFMA",   "kind": "unavailable"},
+    {"key": "TIC",     "kind": "unavailable"},
+    {"key": "MOVE",    "kind": "yfinance", "ref": "^MOVE"},
+    {"key": "COT",     "kind": "unavailable"},
+
+    # 3. 유동성
+    {"key": "M2SL", "kind": "fred", "ref": "M2SL"},
+    {"key": "NETLIQ", "kind": "computed", "ref": "net_liquidity"},
+    {"key": "SOFR", "kind": "fred", "ref": "SOFR"},
+    {"key": "DTWEXBGS", "kind": "fred", "ref": "DTWEXBGS"},
+
+    # 4. 경기
+    {"key": "CPIAUCSL", "kind": "fred", "ref": "CPIAUCSL"},
+    {"key": "ISM_MFG",  "kind": "unavailable"},
+    {"key": "ISM_SVC",  "kind": "unavailable"},
+    {"key": "GOLD",     "kind": "fred", "ref": "GOLDAMGBD228NLBM"},
+    {"key": "COPPER",   "kind": "fred", "ref": "PCOPPUSDM"},
+    {"key": "SOX",      "kind": "yfinance", "ref": "^SOX"},
+
+    # 5. 신용
+    {"key": "BAMLH0A0HYM2", "kind": "fred", "ref": "BAMLH0A0HYM2"},
+    {"key": "DRTSCILM",     "kind": "fred", "ref": "DRTSCILM"},
+
+    # 6. 심리
+    {"key": "VIXCLS", "kind": "fred", "ref": "VIXCLS"},
+    {"key": "SPY_TLT", "kind": "computed", "ref": "spy_tlt_ratio"},
+    {"key": "FUNDFLOW", "kind": "unavailable"},
+]
+
+
+def _quarter_start(d):
+    m = ((d.month - 1) // 3) * 3 + 1
+    return _dt.date(d.year, m, 1)
+
+def _add_quarters(d, n):
+    m_total = (d.year * 12 + (d.month - 1)) + n * 3
+    return _dt.date(m_total // 12, m_total % 12 + 1, 1)
+
+def _add_years(d, n):
+    return _dt.date(d.year + n, d.month, d.day)
+
+
+# ---------- FRED 단일 시리즈 ----------
+def _fetch_fred_at(series_id, end_date):
+    key = getattr(settings, "FRED_API_KEY", None)
+    if not key:
+        return None
+    try:
+        resp = requests.get(
+            "https://api.stlouisfed.org/fred/series/observations",
+            params={
+                "series_id": series_id,
+                "api_key": key,
+                "file_type": "json",
+                "sort_order": "desc",
+                "observation_end": end_date.strftime("%Y-%m-%d"),
+                "limit": 60,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        for o in (resp.json().get("observations") or []):
+            v = o.get("value")
+            if v and v != ".":
+                return {"date": o["date"], "value": float(v)}
+        return None
+    except Exception as e:
+        logger.warning("[FRED] %s @%s 실패: %s", series_id, end_date, e)
+        return None
+
+
+# ---------- yfinance ----------
+def _fetch_yf_at(symbol, end_date):
+    try:
+        # 60일치 받아서 end_date 이전 가장 가까운 종가
+        start = end_date - _dt.timedelta(days=60)
+        df = yf.download(
+            symbol,
+            start=start.strftime("%Y-%m-%d"),
+            end=(end_date + _dt.timedelta(days=1)).strftime("%Y-%m-%d"),
+            progress=False,
+            auto_adjust=True,
+            threads=False,
+        )
+        if df is None or df.empty:
+            return None
+        # yfinance가 multi-index DataFrame을 반환하는 경우 단일 컬럼으로 변환
+        close = df["Close"]
+        if hasattr(close, "iloc") and hasattr(close, "columns"):
+            close = close.iloc[:, 0]
+        last = close.dropna()
+        if last.empty:
+            return None
+        last_date = last.index[-1].date().isoformat()
+        return {"date": last_date, "value": float(last.iloc[-1])}
+    except Exception as e:
+        logger.warning("[yfinance] %s @%s 실패: %s", symbol, end_date, e)
+        return None
+
+
+# ---------- 합성 지표 ----------
+def _compute_net_liquidity(end_date):
+    """Net Liquidity = WALCL − WTREGEN − RRPONTSYD (단위: 10억$)"""
+    walcl = _fetch_fred_at("WALCL", end_date)
+    tga   = _fetch_fred_at("WTREGEN", end_date)
+    rrp   = _fetch_fred_at("RRPONTSYD", end_date)
+    if not (walcl and tga and rrp):
+        return None
+    # FRED: WALCL/WTREGEN 단위는 백만 달러, RRPONTSYD는 십억 달러
+    val = (walcl["value"] - tga["value"]) / 1000.0 - rrp["value"]
+    return {"date": walcl["date"], "value": round(val, 2)}
+
+
+def _compute_spy_tlt(end_date):
+    spy = _fetch_yf_at("SPY", end_date)
+    tlt = _fetch_yf_at("TLT", end_date)
+    if not (spy and tlt) or tlt["value"] == 0:
+        return None
+    return {"date": spy["date"], "value": round(spy["value"] / tlt["value"], 4)}
+
+
+# ---------- 디스패처 ----------
+def _fetch_indicator_at(defn, end_date):
+    kind = defn["kind"]
+    ref = defn.get("ref")
+    if kind == "fred":
+        return _fetch_fred_at(ref, end_date), "fred"
+    if kind == "yfinance":
+        return _fetch_yf_at(ref, end_date), "yfinance"
+    if kind == "computed":
+        if ref == "net_liquidity":
+            return _compute_net_liquidity(end_date), "computed"
+        if ref == "spy_tlt_ratio":
+            return _compute_spy_tlt(end_date), "computed"
+    return None, "unavailable"
+
+
+def update_indicators_for_quarter(quarter_date):
+    """주어진 분기 첫날을 기준으로 (current, prev_q, prev_y) 3개 anchor 모두 fetch + 저장"""
+    anchors = {
+        "current": quarter_date,
+        "prev_q":  _add_quarters(quarter_date, -1),
+        "prev_y":  _add_years(quarter_date, -1),
+    }
+    written = 0
+    skipped = 0
+    for defn in INDICATOR_DEFS:
+        for anchor_key, anchor_date in anchors.items():
+            obs, source = _fetch_indicator_at(defn, anchor_date)
+            obj, _ = IndicatorSnapshot.objects.update_or_create(
+                indicator_key=defn["key"],
+                quarter_anchor=anchor_key,
+                quarter_date=quarter_date,
+                defaults={
+                    "observation_date": _parse_date(obs["date"]) if obs else None,
+                    "value": obs["value"] if obs else None,
+                    "source": source,
+                },
+            )
+            if obs:
+                written += 1
+            else:
+                skipped += 1
+    return {"written": written, "skipped": skipped, "quarter": quarter_date.isoformat()}
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def indicator_snapshots(request):
+    """
+    GET /invest/indicator-snapshots/?quarter=YYYY-MM-DD
+    DB에서 분기 스냅샷 읽어 반환. 비어있으면 즉시 fetch+저장 후 반환 (cold-start).
+    응답: {
+      quarter: '2026-04-01',
+      indicators: {
+        DGS10: { current: {date, value, source}, prev_q: {...}, prev_y: {...} },
+        ...
+      }
+    }
+    """
+    qstr = request.GET.get("quarter")
+    qd = _parse_date(qstr) if qstr else _quarter_start(_dt.date.today())
+    if qd is None:
+        return JsonResponse({"error": "invalid quarter"}, status=400)
+
+    rows = list(IndicatorSnapshot.objects.filter(quarter_date=qd))
+    if not rows:
+        # cold-start: 즉시 채움 (느릴 수 있음 — cron + management command 권장)
+        try:
+            update_indicators_for_quarter(qd)
+            rows = list(IndicatorSnapshot.objects.filter(quarter_date=qd))
+        except Exception as e:
+            logger.error("indicator_snapshots cold-start 실패: %s", e, exc_info=True)
+            return JsonResponse({"error": str(e)}, status=500)
+
+    indicators = {}
+    for r in rows:
+        d = indicators.setdefault(r.indicator_key, {})
+        d[r.quarter_anchor] = {
+            "date": r.observation_date.isoformat() if r.observation_date else None,
+            "value": r.value,
+            "source": r.source,
+        }
+    return JsonResponse({
+        "quarter": qd.isoformat(),
+        "indicators": indicators,
+        "count": len(indicators),
+        "fetched_at": max((r.fetched_at for r in rows), default=None).isoformat() if rows else None,
+    })

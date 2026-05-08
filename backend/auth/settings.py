@@ -32,18 +32,18 @@ INSTALLED_APPS = [
     'django_rest_passwordreset',
     'django_filters',
     'phonenumber_field',
-    #wiki
-    'django.contrib.sites.apps.SitesConfig',
-    'django.contrib.humanize.apps.HumanizeConfig',
-    'django_nyt.apps.DjangoNytConfig',
-    'mptt',
-    'sekizai',
-    'sorl.thumbnail',
-    'wiki.apps.WikiConfig',
-    'wiki.plugins.attachments.apps.AttachmentsConfig',
-    'wiki.plugins.notifications.apps.NotificationsConfig',
-    'wiki.plugins.images.apps.ImagesConfig',
-    'wiki.plugins.macros.apps.MacrosConfig',
+    #wiki — wiki 패키지(`pip install wiki`)가 설치되어야 활성화 가능
+    # 'django.contrib.sites.apps.SitesConfig',
+    # 'django.contrib.humanize.apps.HumanizeConfig',
+    # 'django_nyt.apps.DjangoNytConfig',
+    # 'mptt',
+    # 'sekizai',
+    # 'sorl.thumbnail',
+    # 'wiki.apps.WikiConfig',
+    # 'wiki.plugins.attachments.apps.AttachmentsConfig',
+    # 'wiki.plugins.notifications.apps.NotificationsConfig',
+    # 'wiki.plugins.images.apps.ImagesConfig',
+    # 'wiki.plugins.macros.apps.MacrosConfig',
 ]
 
 MIDDLEWARE = [

@@ -504,3 +504,34 @@ class WikiVersion(models.Model):
 
     def __str__(self):
         return f"{self.page.title} - {self.edited_at.strftime('%Y-%m-%d %H:%M:%S')}"
+
+# =====================================================================
+# IndicatorSnapshot — 매크로 지표(분기 첫달 1일 기준) 저장소
+# ---------------------------------------------------------------------
+# update_indicators 관리 명령어가 매일 자정(미국 시간) 실행되어
+# (current quarter, prev quarter, prev year) 3개 anchor 값을 각 지표마다
+# fetch + 저장. /invest/indicator-snapshots/ 가 이 테이블을 읽어 응답.
+# =====================================================================
+
+class IndicatorSnapshot(models.Model):
+    indicator_key = models.CharField(max_length=64, db_index=True)
+    quarter_anchor = models.CharField(
+        max_length=16,
+        help_text="'current' / 'prev_q' / 'prev_y'",
+    )
+    quarter_date = models.DateField(help_text="기준 분기 첫달 1일")
+    observation_date = models.DateField(null=True, blank=True)
+    value = models.FloatField(null=True, blank=True)
+    source = models.CharField(max_length=32, default="fred")
+    fetched_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [("indicator_key", "quarter_anchor", "quarter_date")]
+        indexes = [
+            models.Index(fields=["quarter_date", "quarter_anchor"]),
+            models.Index(fields=["indicator_key"]),
+        ]
+        ordering = ["-quarter_date", "indicator_key"]
+
+    def __str__(self):
+        return f"{self.indicator_key}@{self.quarter_anchor}({self.quarter_date}) = {self.value}"

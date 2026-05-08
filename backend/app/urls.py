@@ -23,6 +23,7 @@ from app.views_invest import (
     bitcoin_price,
     market_signals,
     ndx100_list,
+    indicator_snapshots,
 )
 
 router = DefaultRouter()
@@ -66,4 +67,5 @@ urlpatterns = router.urls + [
     path('invest/bitcoin/',            bitcoin_price,    name='invest-bitcoin'),
     path('invest/market-signals/',     market_signals,   name='invest-market-signals'),
     path('invest/ndx100/',             ndx100_list,      name='invest-ndx100'),
+    path('invest/indicator-snapshots/', indicator_snapshots, name='invest-indicator-snapshots'),
 ]
