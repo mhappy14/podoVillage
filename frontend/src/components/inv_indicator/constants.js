@@ -49,8 +49,8 @@ export const SECTIONS = [
     title: "4. 경기 지표",
     items: [
       { name: "소비자물가지수 (CPI)", seriesId: "CPIAUCSL", unit: "index", interpret: "lower-bullish" },
-      { name: "ISM 제조업 PMI", seriesId: null, unit: "index", interpret: "higher-bullish",
-        note: "ISM 라이선스 — FRED 미제공" },
+      { name: "ISM 제조업 PMI (Philly Fed Proxy)", seriesId: "ISM_MFG", unit: "index", interpret: "higher-bullish",
+        note: "ISM 라이선스 미제공 → Philly Fed Mfg General Activity (GACDFSA066MSFRBPHI) 프록시" },
       { name: "ISM 서비스업 PMI", seriesId: null, unit: "index", interpret: "higher-bullish",
         note: "ISM 라이선스 — FRED 미제공" },
       { name: "금 가격 (London PM Fix)", seriesId: "GOLD", unit: "$/oz", interpret: "higher-bullish" },

@@ -1,249 +1,332 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Pagination, Typography, Select, Card, Space, Flex } from 'antd';
-import { Link } from 'react-router-dom';
-import AxiosInstance from './AxiosInstance';
+// =====================================================================
+// Study.jsx — 시험 회차(Examnumber) 아이콘 그리드 + 4-필터
+// ---------------------------------------------------------------------
+// 각 카드 = 하나의 Examnumber (특정 시험의 특정 회차).
+// 상단 4-필터: 시험유형 / 시험명 / 연도 / 회차
+// 카드 클릭 → /study/view/:examnumberId (StudyView)
+// =====================================================================
 
-const { Text } = Typography;
+import React, { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { Select, Typography, Empty, Spin, Button, Space } from "antd";
+import AxiosInstance from "./AxiosInstance";
 
-// 안전 배열
+const { Text, Title } = Typography;
+
 const asArray = (payload) => {
   if (Array.isArray(payload)) return payload;
   if (payload && Array.isArray(payload.results)) return payload.results;
   return [];
 };
 
-// 표시용 라벨
-const renderExamLabel = (exam) =>
-  exam?.examtype === 'Public'
-    ? `${exam?.ragent ?? ''} ${exam?.rposition ?? ''} ${exam?.examname ?? ''}`.trim()
-    : exam?.examname;
+// 시험유형(examtype) 분류 — 사용자 요구사항: 기술사/기사/국가직/서울시
+// Exam 모델의 examtype("License"/"Public"/...) + ragent + examname 조합으로 도출
+function deriveExamCategory(exam) {
+  if (!exam) return "기타";
+  if (exam.examtype === "Public") {
+    return exam.ragent || "공무원";
+  }
+  // License (자격증) → "기술사" 또는 "기사" 등 examname 에서 추정
+  const name = exam.examname || "";
+  if (name.includes("기술사")) return "기술사";
+  if (name.includes("기사")) return "기사";
+  if (name.includes("산업기사")) return "산업기사";
+  if (name.includes("기능사")) return "기능사";
+  return exam.examtype === "License" ? "자격증" : "기타";
+}
+
+// 시험명 라벨 (공무원이면 ragent + rposition 포함)
+function renderExamLabel(exam) {
+  if (!exam) return "";
+  if (exam.examtype === "Public") {
+    return [exam.ragent, exam.rposition, exam.examname].filter(Boolean).join(" ");
+  }
+  return exam.examname;
+}
 
 const Study = () => {
-  const [explanations, setExplanations] = useState([]);   // 항상 배열 유지
+  const [exams, setExams] = useState([]);
+  const [examnumbers, setExamnumbers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // ✅ 필터는 id 기반으로 관리
-  const [selectedExamId, setSelectedExamId] = useState('');
-  const [selectedExamnumberId, setSelectedExamnumberId] = useState('');
-  const [selectedQsubjectId, setSelectedQsubjectId] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [qsubjMap, setQsubjMap] = useState({});
+  // 4 필터
+  const [fCategory, setFCategory] = useState(null); // 시험유형
+  const [fExamId, setFExamId] = useState(null);     // 시험명 (Exam.id)
+  const [fYear, setFYear] = useState(null);         // 연도
+  const [fNumber, setFNumber] = useState(null);     // 회차
 
   useEffect(() => {
-    const fetchAll = async () => {
+    let cancelled = false;
+    (async () => {
       try {
-        const [exRes, qsRes] = await Promise.all([
-          AxiosInstance.get('explanation/', { headers: { Authorization: null } }),
-          AxiosInstance.get('examqsubject/'), // ← 추가
+        const [exRes, enRes] = await Promise.all([
+          AxiosInstance.get("exam/"),
+          AxiosInstance.get("examnumber/"),
         ]);
-        setExplanations(asArray(exRes.data));
-
-        const list = asArray(qsRes.data);
-        const map = {};
-        for (const s of list) if (s?.id) map[String(s.id)] = s;
-        setQsubjMap(map);
+        if (cancelled) return;
+        setExams(asArray(exRes.data));
+        setExamnumbers(asArray(enRes.data));
       } catch (e) {
-        console.error(e);
+        console.error("Study: 데이터 로드 실패", e);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    };
-    fetchAll();
+    })();
+    return () => { cancelled = true; };
   }, []);
 
-  // ===== 옵션 구성 (중복 제거)
-  const examOptions = useMemo(() => {
-    const uniq = new Map();
-    for (const it of asArray(explanations)) {
-      const ex = it?.exam;
-      if (!ex?.id) continue;
-      if (!uniq.has(ex.id)) uniq.set(ex.id, { value: String(ex.id), label: renderExamLabel(ex) });
-    }
-    return [{ value: '', label: '전체' }, ...Array.from(uniq.values())];
-  }, [explanations]);
+  // examnumber 의 exam 정보 빠른 조회용 맵
+  const examMap = useMemo(() => {
+    const m = new Map();
+    for (const e of exams) m.set(e.id, e);
+    return m;
+  }, [exams]);
 
-  const examnumberOptions = useMemo(() => {
-    const uniq = new Map();
-    for (const it of asArray(explanations)) {
-      const en = it?.examnumber;
-      const exam = it?.exam;
-      if (!en?.id) continue;
-      // 선택된 시험이 있다면 해당 시험에 속하는 회차만
-      if (selectedExamId && String(exam?.id) !== String(selectedExamId)) continue;
-      const label = en?.slug ?? `${en?.year ?? '-'}년 ${en?.examnumber ?? '-'}회`;
-      if (!uniq.has(en.id)) uniq.set(en.id, { value: String(en.id), label });
-    }
-    return [{ value: '', label: '전체' }, ...Array.from(uniq.values())];
-  }, [explanations, selectedExamId]);
+  // examnumber 에 exam 객체를 합쳐 풍부한 행으로 변환
+  const enriched = useMemo(() => {
+    return examnumbers
+      .map((en) => {
+        const examObj = en.exam && typeof en.exam === "object"
+          ? en.exam
+          : examMap.get(en.exam);
+        return { ...en, examObj, category: deriveExamCategory(examObj) };
+      })
+      .filter((it) => !!it.examObj);
+  }, [examnumbers, examMap]);
 
-  const qsubjectOptions = useMemo(() => {
-    const uniq = new Map();
-    for (const it of asArray(explanations)) {
-      const q = it?.question;
-      const en = it?.examnumber;
-      const ex = it?.exam;
-      const qs = q?.examqsubject;
-      if (!qs?.id) continue;
+  // ===== 필터 옵션 =====
+  const categoryOptions = useMemo(() => {
+    const set = new Set(enriched.map((it) => it.category).filter(Boolean));
+    return Array.from(set).map((v) => ({ value: v, label: v }));
+  }, [enriched]);
 
-      // 선택된 시험/회차 조건 적용
-      if (selectedExamId && String(ex?.id) !== String(selectedExamId)) continue;
-      if (selectedExamnumberId && String(en?.id) !== String(selectedExamnumberId)) continue;
+  const examNameOptions = useMemo(() => {
+    const map = new Map();
+    enriched.forEach((it) => {
+      if (fCategory && it.category !== fCategory) return;
+      if (!map.has(it.examObj.id)) {
+        map.set(it.examObj.id, {
+          value: it.examObj.id,
+          label: renderExamLabel(it.examObj),
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [enriched, fCategory]);
 
-      const label = qs?.slug || `${qs?.esn ?? ''}. ${qs?.est ?? ''}`.trim();
-      if (!uniq.has(qs.id)) uniq.set(qs.id, { value: String(qs.id), label });
-    }
-    return [{ value: '', label: '전체' }, ...Array.from(uniq.values())];
-  }, [explanations, selectedExamId, selectedExamnumberId]);
+  const yearOptions = useMemo(() => {
+    const set = new Set();
+    enriched.forEach((it) => {
+      if (fCategory && it.category !== fCategory) return;
+      if (fExamId && it.examObj.id !== fExamId) return;
+      if (it.year != null) set.add(it.year);
+    });
+    return Array.from(set).sort((a, b) => b - a).map((v) => ({ value: v, label: `${v}년` }));
+  }, [enriched, fCategory, fExamId]);
+
+  const numberOptions = useMemo(() => {
+    const set = new Set();
+    enriched.forEach((it) => {
+      if (fCategory && it.category !== fCategory) return;
+      if (fExamId && it.examObj.id !== fExamId) return;
+      if (fYear && it.year !== fYear) return;
+      if (it.examnumber != null) set.add(it.examnumber);
+    });
+    return Array.from(set).sort((a, b) => a - b).map((v) => ({ value: v, label: `${v}회` }));
+  }, [enriched, fCategory, fExamId, fYear]);
 
   // ===== 필터링 =====
-  const filteredExplanations = useMemo(() => {
-    let filtered = asArray(explanations);
+  const visible = useMemo(() => {
+    return enriched.filter((it) => {
+      if (fCategory && it.category !== fCategory) return false;
+      if (fExamId && it.examObj.id !== fExamId) return false;
+      if (fYear && it.year !== fYear) return false;
+      if (fNumber && it.examnumber !== fNumber) return false;
+      return true;
+    }).sort((a, b) => {
+      // 최신 연도 + 회차 내림차순
+      if (b.year !== a.year) return (b.year || 0) - (a.year || 0);
+      return (b.examnumber || 0) - (a.examnumber || 0);
+    });
+  }, [enriched, fCategory, fExamId, fYear, fNumber]);
 
-    if (selectedExamId) {
-      filtered = filtered.filter((item) => String(item?.exam?.id) === String(selectedExamId));
-    }
-    if (selectedExamnumberId) {
-      filtered = filtered.filter(
-        (item) => String(item?.examnumber?.id) === String(selectedExamnumberId)
-      );
-    }
-    if (selectedQsubjectId) {
-      filtered = filtered.filter(
-        (item) => String(item?.question?.examqsubject?.id) === String(selectedQsubjectId)
-      );
-    }
-    return filtered;
-  }, [explanations, selectedExamId, selectedExamnumberId, selectedQsubjectId]);
-
-  // ===== 정렬 =====
-  const sortedExplanations = useMemo(() => {
-    const arr = asArray(filteredExplanations);
-    return arr.slice().sort((a, b) => new Date(b?.created_at) - new Date(a?.created_at));
-  }, [filteredExplanations]);
-
-  // ===== 페이지네이션 =====
-  const itemsPerPage = 10;
-  const totalPages = Math.max(1, Math.ceil(sortedExplanations.length / itemsPerPage));
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const paginatedExplanations = sortedExplanations.slice(indexOfFirstItem, indexOfLastItem);
-
-  const handlePageChange = (page) => setCurrentPage(page);
+  const resetFilters = () => {
+    setFCategory(null);
+    setFExamId(null);
+    setFYear(null);
+    setFNumber(null);
+  };
 
   return (
-    <div style={{ padding: '1rem' }}>
-      {/* 필터링 Select */}
-      <Flex gap="middle" style={{ marginBottom: '1rem' }}>
-        <div style={{ flex: 1 }}>
-          <Text strong>시험명</Text>
-          <Select
-            value={selectedExamId}
-            onChange={(value) => {
-              setSelectedExamId(value);
-              // 하위 의존 필터 초기화
-              setSelectedExamnumberId('');
-              setSelectedQsubjectId('');
-              setCurrentPage(1);
-            }}
-            style={{ width: '100%' }}
-            options={examOptions}
-            placeholder="시험명을 선택하세요"
-            allowClear
-          />
-        </div>
-
-        <div style={{ flex: 1 }}>
-          <Text strong>시험회차</Text>
-          <Select
-            value={selectedExamnumberId}
-            onChange={(value) => {
-              setSelectedExamnumberId(value);
-              // 과목 필터 초기화
-              setSelectedQsubjectId('');
-              setCurrentPage(1);
-            }}
-            style={{ width: '100%' }}
-            options={examnumberOptions}
-            placeholder="시험회차를 선택하세요"
-            allowClear
-            disabled={!selectedExamId && examnumberOptions.length > 1 /* 전체만 있을 때만 허용 */}
-          />
-        </div>
-
-        <div style={{ flex: 1 }}>
-          <Text strong>
-            {selectedExamnumberId ? '과목' : '(과목) 시험회차를 먼저 선택해주세요.'}
+    <div style={{ padding: "1rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <Title level={4} style={{ margin: 0 }}>
+          시험 보관소{" "}
+          <Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
+            ({visible.length}건 / 총 {enriched.length}건)
           </Text>
+        </Title>
+        <Space>
+          <Button onClick={resetFilters}>필터 초기화</Button>
+          <Link to="/study/write">
+            <Button type="primary">해설 작성</Button>
+          </Link>
+        </Space>
+      </div>
+
+      {/* 4-필터 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
+        <div>
+          <Text type="secondary" style={{ fontSize: 11 }}>시험유형</Text>
           <Select
-            value={selectedQsubjectId}
-            onChange={(value) => {
-              setSelectedQsubjectId(value);
-              setCurrentPage(1);
-            }}
-            style={{ width: '100%' }}
-            options={qsubjectOptions}
-            placeholder={selectedExamnumberId ? '과목을 선택하세요' : '시험회차를 먼저 선택해주세요.'}
-            disabled={!selectedExamnumberId}
+            value={fCategory}
+            onChange={(v) => { setFCategory(v); setFExamId(null); setFYear(null); setFNumber(null); }}
+            options={categoryOptions}
+            placeholder="기술사 / 기사 / 국가직 / 서울시 ..."
+            allowClear
+            style={{ width: "100%" }}
+          />
+        </div>
+        <div>
+          <Text type="secondary" style={{ fontSize: 11 }}>시험명</Text>
+          <Select
+            value={fExamId}
+            onChange={(v) => { setFExamId(v); setFYear(null); setFNumber(null); }}
+            options={examNameOptions}
+            placeholder="조경기술사 / 도시계획기술사 ..."
             allowClear
             showSearch
-            optionFilterProp="children"
+            optionFilterProp="label"
+            style={{ width: "100%" }}
           />
         </div>
-      </Flex>
+        <div>
+          <Text type="secondary" style={{ fontSize: 11 }}>연도</Text>
+          <Select
+            value={fYear}
+            onChange={(v) => { setFYear(v); setFNumber(null); }}
+            options={yearOptions}
+            placeholder="연도"
+            allowClear
+            style={{ width: "100%" }}
+          />
+        </div>
+        <div>
+          <Text type="secondary" style={{ fontSize: 11 }}>회차</Text>
+          <Select
+            value={fNumber}
+            onChange={setFNumber}
+            options={numberOptions}
+            placeholder="회차"
+            allowClear
+            style={{ width: "100%" }}
+          />
+        </div>
+      </div>
 
-      {/* Explanation 목록 */}
+      {/* 아이콘 그리드 */}
       {loading ? (
-        <Text>Loading data...</Text>
+        <div style={{ textAlign: "center", padding: 60 }}><Spin /></div>
+      ) : visible.length === 0 ? (
+        <Empty description="조건에 맞는 시험이 없습니다." />
       ) : (
-        <Space direction="vertical" style={{ width: '100%' }}>
-          {paginatedExplanations.map((item) => {
-            const ex = item?.exam;
-            const en = item?.examnumber;
-            const q = item?.question;
-            let qs = q?.examqsubject;
-            if (qs && typeof qs !== 'object') {
-              qs = qsubjMap[String(qs)] || null;
-            }
-            const subjLabel = qs?.esn;
-            return (
-              <Link key={item?.id} to={`/study/view/${item?.id}`} style={{ textDecoration: 'none' }}>
-                <Card hoverable>
-                  <Flex justify="space-between" align="center">
-                    <div style={{ width: '20%' }}>
-                      <strong>{renderExamLabel(ex) ?? '-'}</strong>
-                    </div>
-                    <div style={{ width: '20%' }}>
-              {en?.year ?? '-'}년 {en?.examnumber ?? '-'}회 {subjLabel}-{q?.qnumber ?? '-'}
-                    </div>
-                    <div style={{ width: '50%' }}>{q?.qtext ?? ''}</div>
-                    <div style={{ width: '10%', textAlign: 'right' }}>
-                      좋아요: {item?.like_count ?? 0}개
-                    </div>
-                  </Flex>
-                </Card>
-              </Link>
-            );
-          })}
-        </Space>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, 160px)",
+            gap: 16,
+            justifyContent: "start",
+          }}
+        >
+          {visible.map((it) => (
+            <Link key={it.id} to={`/study/view/${it.id}`} style={{ textDecoration: "none" }}>
+              <ExamIcon item={it} />
+            </Link>
+          ))}
+        </div>
       )}
-
-      {/* Pagination + Write 버튼 */}
-      <Flex justify="space-between" align="center" style={{ marginTop: '2rem' }}>
-        <div />
-        <Pagination
-          current={currentPage}
-          total={sortedExplanations.length}
-          pageSize={itemsPerPage}
-          onChange={handlePageChange}
-        />
-        <Button type="primary">
-          <Link to="/study/write" style={{ color: 'white' }}>
-            Write
-          </Link>
-        </Button>
-      </Flex>
     </div>
   );
 };
+
+// ---------- 아이콘 카드 (160 × 120) ----------
+function ExamIcon({ item }) {
+  const ex = item.examObj;
+  return (
+    <div
+      className="study-exam-icon"
+      style={{
+        width: 160,
+        height: 120,
+        borderRadius: 10,
+        border: "1px solid #e5e7eb",
+        background: "linear-gradient(135deg, #fff 0%, #f5f7fb 100%)",
+        boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+        padding: "10px 12px",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        cursor: "pointer",
+        transition: "transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.transform = "translateY(-2px)";
+        e.currentTarget.style.boxShadow = "0 6px 16px rgba(0,0,0,0.08)";
+        e.currentTarget.style.borderColor = "#1677ff";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.transform = "translateY(0)";
+        e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.04)";
+        e.currentTarget.style.borderColor = "#e5e7eb";
+      }}
+    >
+      <div>
+        <div
+          style={{
+            fontSize: 10,
+            color: "#1677ff",
+            fontWeight: 600,
+            letterSpacing: 0.5,
+            marginBottom: 2,
+          }}
+        >
+          {item.category}
+        </div>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: "#1f2937",
+            lineHeight: 1.3,
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}
+        >
+          {renderExamLabel(ex)}
+        </div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+        <div style={{ fontSize: 11, color: "#6b7280" }}>
+          {item.year}년
+        </div>
+        <div
+          style={{
+            fontSize: 16,
+            fontWeight: 700,
+            color: "#111827",
+            background: "#f0f9ff",
+            border: "1px solid #bae6fd",
+            borderRadius: 6,
+            padding: "2px 8px",
+          }}
+        >
+          {item.examnumber}회
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default Study;

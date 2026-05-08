@@ -1,3 +1,10 @@
+// =====================================================================
+// [필요없음] — 새 Study.jsx 아이콘 그리드 + 4-필터 디자인에서는
+// 페이지네이션 대신 grid + filter 가 모든 시험을 한 화면에 노출하므로
+// 이 컴포넌트는 더이상 import 되지 않습니다.
+// 추후 필요 시 다시 살릴 수 있도록 파일은 보존.
+// =====================================================================
+
 import React, { useMemo, useState } from 'react';
 import { Card, Row, Col, Pagination, Button, Typography } from 'antd';
 import { Link } from 'react-router-dom';

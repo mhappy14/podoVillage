@@ -8,6 +8,7 @@ import StudyWriteQuestion from './StudyWriteQuestion';
 import StudyWriteMainsubject from './StudyWriteMainsubject';
 import StudyWriteDetailsubject from './StudyWriteDetailsubject';
 import StudyWriteExplanation from './StudyWriteExplanation';
+import StudyPdfImport from './StudyPdfImport';
 
 const { Title } = Typography;
 
@@ -114,6 +115,19 @@ const StudyWrite = () => {
       <Title level={4} style={{ marginBottom: '0.5rem' }}>
         Register my answer
       </Title>
+
+      {/* PDF 자동 파싱 (기술사 기출문제 일괄 등록) */}
+      <Card style={{ marginBottom: '1rem', padding: 0 }}>
+        <StudyPdfImport
+          examList={examList}
+          onImported={() => {
+            fetchExamNumbers();
+            fetchExamQsubjects();
+            fetchQuestions();
+            fetchExplanations();
+          }}
+        />
+      </Card>
 
       {/* 상단 - Explanation */}
       <Card style={{ marginBottom: '1rem', padding: 0 }}>

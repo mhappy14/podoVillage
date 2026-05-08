@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Form, Select, Input, Button, Typography, Row, Col, Checkbox, message } from 'antd';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import AxiosInstance from './AxiosInstance';
 import DOMPurify from 'dompurify';
 import parseWikiSyntax from './WikiParser';
@@ -35,6 +35,7 @@ const StudyWriteExplanation = ({
   isEdit = false,
 }) => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   // 정규화된 리스트
   const exams = useMemo(() => asArray(examList), [examList]);
@@ -50,6 +51,21 @@ const StudyWriteExplanation = ({
   const [selectedExam, setSelectedExam] = useState(selectedExplanation?.exam?.id || '');
   const [selectedExamNumber, setSelectedExamNumber] = useState(selectedExplanation?.examnumber?.id || '');
   const [selectedQuestion, setSelectedQuestion] = useState(selectedExplanation?.question?.id || '');
+
+  // URL ?question=:id 가 있으면 해당 question 으로부터 exam/examnumber/question 자동 선택
+  useEffect(() => {
+    const qIdParam = searchParams.get('question');
+    if (!qIdParam || isEdit) return;
+    const qId = Number(qIdParam);
+    if (Number.isNaN(qId) || questions.length === 0) return;
+    const matched = questions.find((q) => Number(q.id) === qId);
+    if (!matched) return;
+    const eId = typeof matched.exam === 'object' ? matched.exam?.id : matched.exam;
+    const enId = typeof matched.examnumber === 'object' ? matched.examnumber?.id : matched.examnumber;
+    if (eId) setSelectedExam(eId);
+    if (enId) setSelectedExamNumber(enId);
+    setSelectedQuestion(qId);
+  }, [searchParams, questions, isEdit]);
   const [selectedMainsubjects, setSelectedMainsubjects] = useState(
     (selectedExplanation?.mainsubject || []).map((ms) => ms.id)
   );

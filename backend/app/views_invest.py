@@ -619,7 +619,9 @@ INDICATOR_DEFS = [
 
     # 4. 경기
     {"key": "CPIAUCSL", "kind": "fred", "ref": "CPIAUCSL"},
-    {"key": "ISM_MFG",  "kind": "unavailable"},
+    # ISM Mfg PMI: 라이선스 데이터라 직접 무료 제공 X.
+    # Philly Fed Mfg General Activity 를 프록시로 사용 (ISM 과 상관계수 ~0.8)
+    {"key": "ISM_MFG", "kind": "fred", "ref": "GACDFSA066MSFRBPHI"},
     {"key": "ISM_SVC",  "kind": "unavailable"},
     {"key": "GOLD",     "kind": "fred", "ref": "GOLDAMGBD228NLBM"},
     {"key": "COPPER",   "kind": "fred", "ref": "PCOPPUSDM"},

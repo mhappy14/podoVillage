@@ -191,11 +191,11 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-#wiki 계정가입여부
-WIKI_ACCOUNT_HANDLING = True
-WIKI_ACCOUNT_SIGNUP_ALLOWED = True
+#wiki 계정가입여부 — django-wiki 미사용 (자체 WikiPage 모델 사용)
+# WIKI_ACCOUNT_HANDLING = True
+# WIKI_ACCOUNT_SIGNUP_ALLOWED = True
 
-SITE_ID = 1
+# SITE_ID = 1   # django.contrib.sites 도 미사용 (위 INSTALLED_APPS 참조)
 
 LOGGING = {
     "version": 1,

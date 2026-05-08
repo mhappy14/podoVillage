@@ -263,12 +263,19 @@ class CreateDetailsubjectViewset(viewsets.ModelViewSet):
 class CreateExplanationViewset(viewsets.ModelViewSet):
 	queryset = Explanation.objects.all().order_by('-created_at')  # 최신 순으로 정렬
 	serializer_class = ExplanationSerializer
-	permission_classes = [permissions.AllowAny]
+
+	# 조회는 비로그인 허용, 작성/수정/삭제는 로그인 필요
+	def get_permissions(self):
+		if self.action in ('list', 'retrieve'):
+			return [permissions.AllowAny()]
+		return [permissions.IsAuthenticated()]
 
 	def perform_create(self, serializer):
-		mainsubject_data = self.request.data.get('mainsubject', [])
-		detailsubject_data = self.request.data.get('detailsubject', [])
-		explanation = serializer.save(nickname=self.request.user)
+		mainsubject_data = self.request.data.get('mainsubject', []) or []
+		detailsubject_data = self.request.data.get('detailsubject', []) or []
+		# AnonymousUser 는 FK에 저장 불가 — 명시적으로 None 처리
+		user = self.request.user if self.request.user.is_authenticated else None
+		explanation = serializer.save(nickname=user)
 		explanation.mainsubject.set(mainsubject_data)
 		explanation.detailsubject.set(detailsubject_data)
 
@@ -438,3 +445,149 @@ class WikiPageViewSet(viewsets.ModelViewSet):
         norm = _normalize_title(raw)
         page = get_object_or_404(WikiPage, title=norm)
         return Response(self.get_serializer(page).data)
+
+# =====================================================================
+# PDF 기반 기술사 기출문제 파싱
+# ---------------------------------------------------------------------
+# 입력: multipart/form-data 로 업로드된 PDF 파일
+# 출력: {
+#   detected: {
+#     examname: '조경기술사',
+#     examnumber: 132,
+#     year: 2024,
+#   },
+#   pages: [
+#     { stage: 1, questions: [{ qnumber: 1, qtext: '...' }, ...] },
+#     ...
+#   ]
+# }
+# 파싱 후 즉시 저장하지는 않고 프론트가 사용자에게 미리보기 → 확인 → 저장 호출.
+# =====================================================================
+import re as _re
+try:
+    from pypdf import PdfReader as _PdfReader  # pypdf 가 설치되어 있어야 함
+except Exception:
+    _PdfReader = None
+
+
+def _detect_exam_meta(full_text: str):
+    """첫 페이지 헤더에서 시험명/회차/시험시간 추출"""
+    meta = {}
+    # 회차: "기술사 제132회"
+    m = _re.search(r'기술사\s*제\s*(\d+)\s*회', full_text)
+    if m:
+        meta['examnumber'] = int(m.group(1))
+    # 종목명: "조경기술사", "도시계획기술사" 등
+    m = _re.search(r'(\S*기술사)', full_text)
+    if m:
+        meta['examname'] = m.group(1).strip()
+    # 시험시간: "시험시간: 100분"
+    m = _re.search(r'시험시간\s*[:：]?\s*(\d+)', full_text)
+    if m:
+        meta['minutes'] = int(m.group(1))
+    return meta
+
+
+def _parse_questions_in_page(page_text: str):
+    """
+    페이지 텍스트에서 문제 리스트 추출.
+    패턴: 줄 시작 또는 공백 후 "N." (N=1~99) 다음에 본문이 이어지고
+          다음 "M." 까지가 한 문제.
+    """
+    # 헤더/푸터 정리: 페이지 번호 "1 - 1", "수험번호" 라인 등 제거
+    cleaned = []
+    for line in page_text.split('\n'):
+        s = line.strip()
+        if not s:
+            continue
+        # 헤더/푸터 패턴
+        if _re.match(r'^[\d]+\s*-\s*[\d]+$', s):  # "1 - 1" 페이지 번호
+            continue
+        if '수험번호' in s or '응시 종목' in s or '인쇄 상태' in s:
+            continue
+        if s.startswith('"채점기준') or s.startswith('“채점기준'):
+            continue
+        if s.startswith('국가기술자격') or '시험문제' in s and '기술사' in s:
+            continue
+        if s.startswith('▶') or s.startswith('※'):
+            # ※ 안내문은 한 줄짜리이므로 그냥 스킵
+            continue
+        if _re.match(r'^[\d]교시$', s):  # "1교시"
+            continue
+        cleaned.append(s)
+
+    body = ' '.join(cleaned)
+    # 문제 분리: "N." (1~99) 으로 시작하는 부분
+    parts = _re.split(r'(?<!\d)(\d{1,2})\.\s+', body)
+    # parts 는 [pre, num, text, num, text, ...] 형태
+    questions = []
+    for i in range(1, len(parts), 2):
+        try:
+            qnum = int(parts[i])
+        except ValueError:
+            continue
+        qtext = parts[i + 1] if i + 1 < len(parts) else ''
+        qtext = qtext.strip().rstrip('.')
+        if qtext and qnum > 0:
+            questions.append({"qnumber": qnum, "qtext": qtext})
+    return questions
+
+
+def _detect_stage(page_text: str, page_idx: int):
+    """페이지 내 'N교시' 또는 페이지 인덱스 기반으로 교시 결정"""
+    m = _re.search(r'(\d+)\s*교시', page_text)
+    if m:
+        return int(m.group(1))
+    # 폴백: 페이지 순서 (0-based → 1교시부터)
+    return page_idx + 1
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def parse_exam_pdf(request):
+    """
+    POST /parse-exam-pdf/  (multipart/form-data, file=...)
+    """
+    if _PdfReader is None:
+        return JsonResponse({
+            "error": "pypdf 미설치 — 백엔드에 'pip install pypdf' 가 필요합니다.",
+        }, status=500)
+
+    f = request.FILES.get('file')
+    if not f:
+        return JsonResponse({"error": "PDF 파일이 첨부되지 않았습니다."}, status=400)
+
+    try:
+        reader = _PdfReader(f)
+    except Exception as e:
+        return JsonResponse({"error": f"PDF 열기 실패: {e}"}, status=400)
+
+    pages = []
+    full_text_parts = []
+    for idx, page in enumerate(reader.pages):
+        try:
+            ptext = page.extract_text() or ''
+        except Exception:
+            ptext = ''
+        full_text_parts.append(ptext)
+        stage = _detect_stage(ptext, idx)
+        questions = _parse_questions_in_page(ptext)
+        pages.append({
+            "page_index": idx,
+            "stage": stage,
+            "questions": questions,
+        })
+
+    full_text = '\n'.join(full_text_parts)
+    meta = _detect_exam_meta(full_text)
+    # 파일명에서 연도 추출 시도
+    fname = getattr(f, 'name', '')
+    m_year = _re.search(r'(20\d{2})', fname)
+    if m_year:
+        meta['year'] = int(m_year.group(1))
+
+    return JsonResponse({
+        "detected": meta,
+        "pages": pages,
+        "total_questions": sum(len(p["questions"]) for p in pages),
+    })

@@ -13,6 +13,7 @@ from .views import (
     CreateExplanationViewset, CreateCommentViewset,
     AuthorViewSet, AgencyViewSet, PublicationViewSet, PaperViewSet,
     WikiPageViewSet,
+    parse_exam_pdf,
 )
 
 # 투자지표 관련 뷰 import
@@ -68,4 +69,5 @@ urlpatterns = router.urls + [
     path('invest/market-signals/',     market_signals,   name='invest-market-signals'),
     path('invest/ndx100/',             ndx100_list,      name='invest-ndx100'),
     path('invest/indicator-snapshots/', indicator_snapshots, name='invest-indicator-snapshots'),
+    path('parse-exam-pdf/', parse_exam_pdf, name='parse-exam-pdf'),
 ]
