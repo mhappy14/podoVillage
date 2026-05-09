@@ -22,12 +22,15 @@ import {
   Tag,
   Space,
   message,
+  Modal,
+  Input,
 } from "antd";
 import {
   LeftOutlined,
   RightOutlined,
   BookOutlined,
   EditOutlined,
+  ToolOutlined,
 } from "@ant-design/icons";
 import AxiosInstance from "./AxiosInstance";
 import ExplanationCarousel from "./ExplanationCarousel";
@@ -327,21 +330,58 @@ const StudyView = () => {
 };
 
 // ---------- 한 문제 + 해설 carousel ----------
-function QuestionBlock({ question, explanations, user }) {
-  // 이 문제의 해설들 — 좋아요 desc → 북마크 desc → 등록일 asc (가장 먼저 작성된 게 우선)
+function QuestionBlock({ question: initialQ, explanations, user }) {
+  const [question, setQuestion] = useState(initialQ);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editText, setEditText] = useState(initialQ.qtext || "");
+  const [editScript, setEditScript] = useState(initialQ.qscript || "");
+  const [saving, setSaving] = useState(false);
+
+  // ex prop 갱신 동기화
+  useEffect(() => {
+    setQuestion(initialQ);
+  }, [initialQ.id]);
+
+  // 이 문제의 해설들 (carousel 내부에서 다시 sort 됨)
   const myExps = useMemo(() => {
-    const list = explanations.filter((ex) => {
+    return explanations.filter((ex) => {
       const qId = ex.question?.id ?? ex.question;
       return qId === question.id;
     });
-    return list.slice().sort((a, b) => {
-      const dl = (b.like_count || 0) - (a.like_count || 0);
-      if (dl !== 0) return dl;
-      const db = (b.bookmark_count || 0) - (a.bookmark_count || 0);
-      if (db !== 0) return db;
-      return new Date(a.created_at || 0) - new Date(b.created_at || 0);
-    });
   }, [explanations, question.id]);
+
+  const openEdit = () => {
+    setEditText(question.qtext || "");
+    setEditScript(question.qscript || "");
+    setEditOpen(true);
+  };
+
+  const saveEdit = async () => {
+    if (!editText.trim()) {
+      message.warning("문제 내용을 입력하세요.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await AxiosInstance.patch(`question/${question.id}/`, {
+        qtext: editText,
+        qscript: editScript || "",
+      });
+      setQuestion((prev) => ({ ...prev, qtext: editText, qscript: editScript }));
+      message.success("문제가 수정되었습니다.");
+      setEditOpen(false);
+    } catch (e) {
+      console.error(e);
+      message.error("수정 실패: " + (e?.response?.data?.detail || e?.message || ""));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 해설 작성 링크에 exam/examnumber/question id 를 query 로 — auto-select
+  const examIdParam = question.exam?.id ?? question.exam ?? "";
+  const enIdParam = question.examnumber?.id ?? question.examnumber ?? "";
+  const writeHref = `/study/write?question=${question.id}&exam=${examIdParam}&examnumber=${enIdParam}`;
 
   return (
     <Card
@@ -363,16 +403,56 @@ function QuestionBlock({ question, explanations, user }) {
             </div>
           )}
         </div>
-        <Link to={`/study/write?question=${question.id}`}>
-          <Button size="small" icon={<EditOutlined />}>
-            해설 작성
-          </Button>
-        </Link>
+        <Space size={4} direction="vertical" align="end">
+          <Tooltip title="문제 본문의 오탈자를 정정합니다">
+            <Button size="small" icon={<ToolOutlined />} onClick={openEdit}>
+              문제 수정
+            </Button>
+          </Tooltip>
+          <Link to={writeHref}>
+            <Button size="small" type="primary" icon={<EditOutlined />}>
+              해설 작성
+            </Button>
+          </Link>
+        </Space>
       </div>
 
       <div style={{ marginTop: 12 }}>
         <ExplanationCarousel explanations={myExps} user={user} />
       </div>
+
+      {/* 문제 수정 모달 */}
+      <Modal
+        title={`문제 ${question.qnumber}번 수정 (오탈자 정정)`}
+        open={editOpen}
+        onCancel={() => setEditOpen(false)}
+        onOk={saveEdit}
+        okText="저장"
+        cancelText="취소"
+        confirmLoading={saving}
+        width={680}
+      >
+        <div style={{ marginBottom: 8 }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>문제 본문 (qtext)</Text>
+          <Input.TextArea
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            autoSize={{ minRows: 3, maxRows: 8 }}
+            maxLength={1000}
+            showCount
+          />
+        </div>
+        <div>
+          <Text type="secondary" style={{ fontSize: 12 }}>부가 설명 (qscript, 선택)</Text>
+          <Input.TextArea
+            value={editScript}
+            onChange={(e) => setEditScript(e.target.value)}
+            autoSize={{ minRows: 2, maxRows: 6 }}
+            maxLength={1000}
+            showCount
+          />
+        </div>
+      </Modal>
     </Card>
   );
 }

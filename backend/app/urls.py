@@ -25,6 +25,7 @@ from app.views_invest import (
     market_signals,
     ndx100_list,
     indicator_snapshots,
+    parse_exam_pdf,
 )
 
 router = DefaultRouter()

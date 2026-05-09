@@ -1,15 +1,17 @@
 // =====================================================================
-// ExplanationCarousel.jsx — 한 문제의 여러 해설을 가로 스크롤 (좋아요순)
+// ExplanationCarousel.jsx — 한 문제의 여러 해설 가로 carousel
 // ---------------------------------------------------------------------
-// · 좋아요 내림차순 정렬 (이미 부모에서 처리)
-// · 가로 carousel — 화살표 버튼으로 한 칸씩 이동 (마우스 휠 사용 X)
-// · 우측 화살표가 펄스/슬라이드 애니메이션으로 "다음 해설 있음" 암시
-// · 각 해설 카드: 좋아요/북마크 토글 + 댓글 영역
-// · 해설 0개일 때 "아직 작성된 답안이 없습니다" 표시
+// 정렬: 좋아요(desc) → 북마크(desc) → 등록일(asc, 빠른 순)
+// 레이아웃 (사용자 요청):
+//   · 첫 화면(index 0): 현재 해설 95% 단독 노출
+//   · 화살표 → 클릭으로 index N (>0) 이동:
+//        좌측 이전 5% peek + 현재 90% + 우측 다음 5% peek
+//   · index N 이 마지막이고 다음이 없으면 → 현재 95% (peek 없음)
+// 애니메이션: width / transform 둘 다 CSS transition (300ms ease)
 // =====================================================================
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Card, Tag, Tooltip, Typography, message, Empty, Space } from "antd";
+import { Button, Card, Tag, Tooltip, Typography, message } from "antd";
 import {
   HeartOutlined,
   HeartFilled,
@@ -18,7 +20,7 @@ import {
   LeftOutlined,
   RightOutlined,
   CommentOutlined,
-  EditOutlined, 
+  EditOutlined,
 } from "@ant-design/icons";
 import { Link } from "react-router-dom";
 import DOMPurify from "dompurify";
@@ -28,14 +30,26 @@ import Comments from "./Comments";
 
 const { Text } = Typography;
 
-const CARD_WIDTH = 630;       // 1.5배 확대 (기존 420 × 1.5)
-const CARD_GAP = 12;          // 카드 사이 간격
-const CARD_BODY_MAXH = 330;   // 카드 본문 영역 max-height (기존 220 × 1.5)
-const PEEK_WIDTH = 60;        // 다음 카드 일부 노출 폭 (사용자 요청)
+// 카드 본문 영역의 최대 높이 (가로폭의 ~75% 비율 유지)
+const CARD_BODY_MAXH = 360;
 
 export default function ExplanationCarousel({ explanations, user }) {
-  // 0건 처리 — 사용자 요구사항: "아직 작성된 답안이 없습니다"
-  if (!explanations || explanations.length === 0) {
+  // 사용자 요청 정렬: 좋아요(desc) → 북마크(desc) → 등록일(asc)
+  const sorted = useMemo(() => {
+    const arr = explanations ? explanations.slice() : [];
+    return arr.sort((a, b) => {
+      const dl = (b.like_count || 0) - (a.like_count || 0);
+      if (dl !== 0) return dl;
+      const db = (b.bookmark_count || 0) - (a.bookmark_count || 0);
+      if (db !== 0) return db;
+      const at = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bt = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return at - bt; // 빠른(오래된) 순
+    });
+  }, [explanations]);
+
+  // 0건 처리
+  if (!sorted || sorted.length === 0) {
     return (
       <div
         style={{
@@ -53,78 +67,126 @@ export default function ExplanationCarousel({ explanations, user }) {
     );
   }
 
-  return (
-    <CarouselInner explanations={explanations} user={user} />
-  );
+  return <CarouselInner explanations={sorted} user={user} />;
 }
 
 function CarouselInner({ explanations, user }) {
-  const scrollerRef = useRef(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
+  const [index, setIndex] = useState(0);
+  const total = explanations.length;
+  const hasPrev = index > 0;
+  const hasNext = index < total - 1;
 
-  const updateScrollState = () => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 4);
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
-  };
+  // 레이아웃 비율 결정 (사용자 요구):
+  //   · index === 0  → [현재 95%]
+  //   · 0 < index < total-1 → [이전 5%][현재 90%][다음 5%]
+  //   · index === total-1 (>0) → [이전 5%][현재 95%]
+  //   · total === 1 → [현재 95%]
+  const layout = useMemo(() => {
+    if (total === 1) return { prev: 0, cur: 95, next: 0 };
+    if (index === 0) return { prev: 0, cur: 95, next: 5 };
+    if (index === total - 1) return { prev: 5, cur: 95, next: 0 };
+    return { prev: 5, cur: 90, next: 5 };
+  }, [index, total]);
 
-  useEffect(() => {
-    updateScrollState();
-    const el = scrollerRef.current;
-    if (!el) return;
-    const onScroll = () => updateScrollState();
-    el.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", updateScrollState);
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", updateScrollState);
-    };
-  }, [explanations.length]);
-
-  const scrollBy = (dir) => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    el.scrollBy({ left: dir * (CARD_WIDTH + CARD_GAP), behavior: "smooth" });
-  };
+  const prevExp = hasPrev ? explanations[index - 1] : null;
+  const curExp = explanations[index];
+  const nextExp = hasNext ? explanations[index + 1] : null;
 
   return (
-    <div style={{ position: "relative" }}>
-      {/* 좌측 화살표 — 스크롤 시 노출 */}
-      {canScrollLeft && (
-        <ArrowButton direction="left" onClick={() => scrollBy(-1)} />
-      )}
-
-      {/* 가로 스크롤러 — paddingRight 로 마지막 카드 뒤에 peek 공간 확보 */}
+    <div style={{ position: "relative", overflow: "hidden" }}>
+      {/* 메인 영역 — 3개의 패널이 가로로 배치되며 width 가 동적으로 변함 */}
       <div
-        ref={scrollerRef}
         style={{
           display: "flex",
-          gap: CARD_GAP,
-          overflowX: "auto",
-          overflowY: "hidden",
-          scrollSnapType: "x mandatory",
-          scrollbarWidth: "thin",
-          paddingBottom: 4,
-          // 다음 카드 일부 노출을 위해 컨테이너의 max-width 를 (CARD_WIDTH + PEEK_WIDTH + GAP) 로
-          // 제한하지 않고, 그 대신 화면이 더 넓을 때만 자연스럽게 1장 + peek 가 보이게 함
-          maxWidth: `${CARD_WIDTH + PEEK_WIDTH + CARD_GAP}px`,
+          gap: 8,
+          alignItems: "stretch",
+          width: "100%",
         }}
       >
-        {explanations.map((ex, idx) => (
-          <div key={ex.id} style={{ flex: "0 0 auto", scrollSnapAlign: "start", width: CARD_WIDTH }}>
-            <ExplanationCard ex={ex} rank={idx + 1} user={user} />
-          </div>
-        ))}
+        {/* 좌측 peek */}
+        <div
+          style={{
+            width: `${layout.prev}%`,
+            flexShrink: 0,
+            transition: "width 300ms ease",
+            overflow: "hidden",
+            opacity: layout.prev > 0 ? 0.45 : 0,
+            cursor: hasPrev ? "pointer" : "default",
+            position: "relative",
+          }}
+          onClick={() => hasPrev && setIndex((i) => Math.max(0, i - 1))}
+        >
+          {prevExp && (
+            <PeekCard ex={prevExp} side="left" />
+          )}
+        </div>
+
+        {/* 현재 해설 */}
+        <div
+          style={{
+            width: `${layout.cur}%`,
+            flexShrink: 0,
+            transition: "width 300ms ease, transform 300ms ease",
+          }}
+          key={curExp.id /* 인덱스 변경 시 key 바꿔 fade-in 효과 */}
+          className="ec-current-fadein"
+        >
+          <ExplanationCard ex={curExp} rank={index + 1} user={user} />
+        </div>
+
+        {/* 우측 peek */}
+        <div
+          style={{
+            width: `${layout.next}%`,
+            flexShrink: 0,
+            transition: "width 300ms ease",
+            overflow: "hidden",
+            opacity: layout.next > 0 ? 0.45 : 0,
+            cursor: hasNext ? "pointer" : "default",
+            position: "relative",
+          }}
+          onClick={() => hasNext && setIndex((i) => Math.min(total - 1, i + 1))}
+        >
+          {nextExp && (
+            <PeekCard ex={nextExp} side="right" />
+          )}
+        </div>
       </div>
 
-      {/* 우측 화살표 — 다음 해설 암시 (펄스 + 슬라이드 애니메이션) */}
-      {canScrollRight && (
-        <ArrowButton direction="right" onClick={() => scrollBy(1)} pulse />
+      {/* 좌측 화살표 */}
+      {hasPrev && (
+        <ArrowButton direction="left" onClick={() => setIndex((i) => Math.max(0, i - 1))} />
       )}
 
-      {/* 인라인 keyframes */}
+      {/* 우측 화살표 — 다음 있음 암시 펄스 */}
+      {hasNext && (
+        <ArrowButton direction="right" onClick={() => setIndex((i) => Math.min(total - 1, i + 1))} pulse />
+      )}
+
+      {/* 인디케이터 (점) */}
+      {total > 1 && (
+        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 8 }}>
+          {explanations.map((ex, i) => (
+            <button
+              key={ex.id}
+              onClick={() => setIndex(i)}
+              title={`${i + 1}번째 해설`}
+              style={{
+                width: i === index ? 18 : 8,
+                height: 8,
+                borderRadius: 4,
+                border: "none",
+                background: i === index ? "#1677ff" : "#d1d5db",
+                cursor: "pointer",
+                transition: "width 200ms ease, background 200ms ease",
+                padding: 0,
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* keyframes */}
       <style>{`
         @keyframes ec-pulse {
           0%, 100% { box-shadow: 0 0 0 0 rgba(22,119,255,0.4); }
@@ -134,10 +196,61 @@ function CarouselInner({ explanations, user }) {
           0%, 100% { transform: translateY(-50%) translateX(0); }
           50% { transform: translateY(-50%) translateX(4px); }
         }
+        @keyframes ec-fadein {
+          from { opacity: 0; transform: translateX(20px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
         .ec-arrow-pulse {
           animation: ec-pulse 1.6s ease-out infinite, ec-slide 1.4s ease-in-out infinite;
         }
+        .ec-current-fadein {
+          animation: ec-fadein 280ms ease-out;
+        }
       `}</style>
+    </div>
+  );
+}
+
+// ---------- 작은 peek 카드 (좌/우 5%) ----------
+function PeekCard({ ex, side }) {
+  return (
+    <div
+      style={{
+        height: "100%",
+        minHeight: 180,
+        borderRadius: 6,
+        border: "1px solid #e5e7eb",
+        background: "#f3f4f6",
+        padding: "8px 6px",
+        overflow: "hidden",
+        position: "relative",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10,
+          color: "#6b7280",
+          fontWeight: 600,
+          [side === "left" ? "textAlign" : "textAlign"]: "center",
+        }}
+      >
+        {side === "left" ? "◀ 이전" : "다음 ▶"}
+      </div>
+      <div
+        style={{
+          fontSize: 11,
+          color: "#374151",
+          marginTop: 4,
+          textOverflow: "ellipsis",
+          overflow: "hidden",
+        }}
+      >
+        ❤ {ex.like_count || 0}
+      </div>
+      <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2 }}>
+        {ex?.nickname?.nickname || "익명"}
+      </div>
     </div>
   );
 }
@@ -154,7 +267,7 @@ function ArrowButton({ direction, onClick, pulse = false }) {
           position: "absolute",
           top: "50%",
           transform: "translateY(-50%)",
-          [isRight ? "right" : "left"]: -16,
+          [isRight ? "right" : "left"]: 8,
           width: 40,
           height: 40,
           borderRadius: "50%",
@@ -162,7 +275,7 @@ function ArrowButton({ direction, onClick, pulse = false }) {
           background: "linear-gradient(135deg, #1677ff, #0958d9)",
           color: "#fff",
           cursor: "pointer",
-          zIndex: 10,
+          zIndex: 20,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -183,6 +296,13 @@ function ExplanationCard({ ex, rank, user }) {
   const [comment, setComment] = useState("");
   const [showComments, setShowComments] = useState(false);
 
+  // ex prop 이 바뀌면 동기화
+  useEffect(() => {
+    setData(ex);
+    setComments([]);
+    setShowComments(false);
+  }, [ex.id]);
+
   const isAuthor = user && data?.nickname?.id && user.id === data.nickname.id;
   const isLoggedIn = !!user;
 
@@ -192,7 +312,6 @@ function ExplanationCard({ ex, rank, user }) {
     return DOMPurify.sanitize(html);
   }, [data?.explanation]);
 
-  // 댓글 로드 (lazy — 영역 펼칠 때)
   useEffect(() => {
     if (!showComments) return;
     let cancelled = false;
@@ -200,7 +319,9 @@ function ExplanationCard({ ex, rank, user }) {
       try {
         const res = await AxiosInstance.get("comment/");
         const list = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-        const filtered = list.filter((c) => c?.explanation?.id === data.id || c?.explanation === data.id);
+        const filtered = list.filter(
+          (c) => c?.explanation?.id === data.id || c?.explanation === data.id
+        );
         if (!cancelled) setComments(filtered);
       } catch (e) {
         console.warn("댓글 로드 실패:", e);
@@ -214,10 +335,10 @@ function ExplanationCard({ ex, rank, user }) {
     try {
       if (data.is_liked) {
         await AxiosInstance.delete(`explanation/${data.id}/unlike/`);
-        setData((prev) => ({ ...prev, is_liked: false, like_count: Math.max(0, (prev.like_count || 1) - 1) }));
+        setData((p) => ({ ...p, is_liked: false, like_count: Math.max(0, (p.like_count || 1) - 1) }));
       } else {
         await AxiosInstance.post(`explanation/${data.id}/like/`);
-        setData((prev) => ({ ...prev, is_liked: true, like_count: (prev.like_count || 0) + 1 }));
+        setData((p) => ({ ...p, is_liked: true, like_count: (p.like_count || 0) + 1 }));
       }
     } catch {
       message.error("좋아요 처리 실패");
@@ -229,10 +350,10 @@ function ExplanationCard({ ex, rank, user }) {
     try {
       if (data.is_bookmarked) {
         await AxiosInstance.delete(`explanation/${data.id}/unbookmark/`);
-        setData((prev) => ({ ...prev, is_bookmarked: false, bookmark_count: Math.max(0, (prev.bookmark_count || 1) - 1) }));
+        setData((p) => ({ ...p, is_bookmarked: false, bookmark_count: Math.max(0, (p.bookmark_count || 1) - 1) }));
       } else {
         await AxiosInstance.post(`explanation/${data.id}/bookmark/`);
-        setData((prev) => ({ ...prev, is_bookmarked: true, bookmark_count: (prev.bookmark_count || 0) + 1 }));
+        setData((p) => ({ ...p, is_bookmarked: true, bookmark_count: (p.bookmark_count || 0) + 1 }));
       }
     } catch {
       message.error("북마크 처리 실패");
@@ -247,7 +368,7 @@ function ExplanationCard({ ex, rank, user }) {
         content: comment,
         explanation: data.id,
       });
-      setComments((prev) => [...prev, res.data]);
+      setComments((p) => [...p, res.data]);
       setComment("");
     } catch {
       message.error("댓글 작성 실패");
@@ -257,21 +378,20 @@ function ExplanationCard({ ex, rank, user }) {
   return (
     <Card
       size="small"
-      styles={{ body: { padding: 12 } }}
+      styles={{ body: { padding: 14 } }}
       style={{
         height: "100%",
         background: "#fff",
         border: rank === 1 ? "1px solid #1677ff" : "1px solid #e5e7eb",
       }}
     >
-      {/* 상단: 순위 + 작성자 + 수정 버튼 */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
-        <Space size={4}>
+        <div>
           {rank === 1 && <Tag color="gold">👑 BEST</Tag>}
           <Text type="secondary" style={{ fontSize: 11 }}>
             #{rank} 해설 · {data?.nickname?.nickname || "익명"}
           </Text>
-        </Space>
+        </div>
         {isAuthor && (
           <Link to={`/study/edit/${data.id}`}>
             <Button size="small" type="text" icon={<EditOutlined />} />
@@ -279,24 +399,22 @@ function ExplanationCard({ ex, rank, user }) {
         )}
       </div>
 
-      {/* 본문 (위키 파싱) */}
       <div
         className="wiki-preview"
         style={{
-          marginTop: 6,
-          padding: "8px 10px",
+          marginTop: 8,
+          padding: "10px 12px",
           border: "1px solid #f0f0f0",
           borderRadius: 6,
           background: "#fafafa",
           maxHeight: CARD_BODY_MAXH,
           overflowY: "auto",
           fontSize: 13,
-          lineHeight: 1.55,
+          lineHeight: 1.6,
         }}
         dangerouslySetInnerHTML={{ __html: sanitized }}
       />
 
-      {/* 메타: 주요/세부 과목 */}
       {(data?.mainsubject?.length || data?.detailsubject?.length) ? (
         <div style={{ marginTop: 6 }}>
           {(data?.mainsubject || []).slice(0, 2).map((s) => (
@@ -308,7 +426,6 @@ function ExplanationCard({ ex, rank, user }) {
         </div>
       ) : null}
 
-      {/* 액션: 좋아요/북마크/댓글 */}
       <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
         <Button
           size="small"
@@ -336,7 +453,6 @@ function ExplanationCard({ ex, rank, user }) {
         </Button>
       </div>
 
-      {/* 댓글 영역 */}
       {showComments && (
         <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #f0f0f0" }}>
           <Comments

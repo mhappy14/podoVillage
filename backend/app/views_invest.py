@@ -817,3 +817,129 @@ def indicator_snapshots(request):
         "count": len(indicators),
         "fetched_at": max((r.fetched_at for r in rows), default=None).isoformat() if rows else None,
     })
+
+
+# =====================================================================
+# 기술사 기출문제 PDF 자동 파싱 — frontend StudyWriteFromPdf.jsx 호출용
+# ---------------------------------------------------------------------
+# POST /parse-exam-pdf/  (multipart/form-data, file=pdf)
+# 응답: {
+#   detected: { examname, examnumber, year },
+#   pages: [{ page_index, stage, questions: [{qnumber, qtext}] }],
+#   total_questions: N
+# }
+# 사전 설치: pip install pdfplumber
+# =====================================================================
+import re as _re
+from rest_framework.parsers import MultiPartParser, FormParser
+
+_HEADER_FOOTER_PATTERNS = [
+    _re.compile(r"국가기술자격"),
+    _re.compile(r"^기술사\s+제\d+회"),
+    _re.compile(r"^분\s*수험\s*성"),
+    _re.compile(r"^야\s*번호\s*명"),
+    _re.compile(r"^건설"),
+    _re.compile(r"^▶수험자"),
+    _re.compile(r"^※"),
+    _re.compile(r"^\d+\s*-\s*\d+$"),
+    _re.compile(r"^[\"“]채점기준"),
+]
+
+
+def _clean_page_lines(text: str):
+    out = []
+    for raw in text.split("\n"):
+        line = raw.strip()
+        if not line:
+            continue
+        if any(p.search(line) for p in _HEADER_FOOTER_PATTERNS):
+            continue
+        out.append(line)
+    return out
+
+
+def _parse_questions_from_lines(lines):
+    """[{qnumber, qtext}] 추출 — multi-line 본문 합침"""
+    items = []
+    cur = None
+    pat = _re.compile(r"^(\d+)\.\s*(.+)$")
+    for line in lines:
+        m = pat.match(line)
+        if m:
+            if cur:
+                items.append(cur)
+            cur = {"qnumber": int(m.group(1)), "qtext": m.group(2).strip()}
+        elif cur:
+            cur["qtext"] += " " + line.strip()
+    if cur:
+        items.append(cur)
+    # 공백 압축
+    for it in items:
+        it["qtext"] = _re.sub(r"\s+", " ", it["qtext"]).strip()
+    return items
+
+
+def _parse_meta(all_text: str):
+    num_m = _re.search(r"기술사\s+제\s*(\d+)\s*회", all_text)
+    sub_m = _re.search(
+        r"(조경기술사|도시계획기술사|건축기술사|토목기술사|[가-힣]{2,8}기술사)",
+        all_text,
+    )
+    # 연도 — "2024제132회" 같은 패턴 또는 별도 추정
+    year_m = _re.search(r"(20\d{2})", all_text)
+    return {
+        "examname": sub_m.group(1) if sub_m else None,
+        "examnumber": int(num_m.group(1)) if num_m else None,
+        "year": int(year_m.group(1)) if year_m else None,
+    }
+
+
+# 교시 → ExamQsubject.examstage 매핑 (4교시는 빈 값)
+_STAGE_LABELS = {1: "1st", 2: "2nd", 3: "3rd", 4: ""}
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def parse_exam_pdf(request):
+    """기술사 기출문제 PDF 업로드 → 교시별 문제 파싱"""
+    f = request.FILES.get("file")
+    if not f:
+        return JsonResponse({"error": "file 파라미터가 필요합니다."}, status=400)
+
+    try:
+        import pdfplumber
+    except ImportError:
+        return JsonResponse(
+            {"error": "백엔드에 pdfplumber 가 설치되지 않았습니다. `pip install pdfplumber` 실행 후 재시도하세요."},
+            status=500,
+        )
+
+    try:
+        all_text = ""
+        pages = []
+        # 메모리에서 직접 읽기
+        with pdfplumber.open(f) as pdf:
+            for i, page in enumerate(pdf.pages, 1):
+                page_text = page.extract_text() or ""
+                all_text += page_text + "\n"
+                cleaned = _clean_page_lines(page_text)
+                qs = _parse_questions_from_lines(cleaned)
+                pages.append({
+                    "page_index": i,
+                    "stage": i,                            # 교시 번호
+                    "stage_label": _STAGE_LABELS.get(i, ""),
+                    "questions": qs,
+                })
+        meta = _parse_meta(all_text)
+        total = sum(len(p["questions"]) for p in pages)
+        return JsonResponse({
+            "detected": meta,
+            "pages": pages,
+            "total_questions": total,
+        })
+    except Exception as e:
+        logger.error("parse_exam_pdf 실패: %s", e, exc_info=True)
+        return JsonResponse(
+            {"error": f"PDF 파싱 실패: {str(e)}"},
+            status=500,
+        )

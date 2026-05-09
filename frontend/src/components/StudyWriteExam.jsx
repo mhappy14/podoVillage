@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Form, Input, Button, Typography, message, Select } from 'antd';
+import { Form, Input, Button, Typography, message, Select, Divider } from 'antd';
 import AxiosInstance from './AxiosInstance';
+import StudyWriteFromPdf from './StudyWriteFromPdf';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -264,6 +265,19 @@ const StudyWriteExam = ({ examList, onExamAdd }) => {
           </Button>
         </Form.Item>
       </Form>
+
+      {/* ===== 기술사 PDF 자동 등록 ===== */}
+      <Divider style={{ margin: "16px 0 12px 0" }}>또는 기술사 PDF 자동 등록</Divider>
+      <StudyWriteFromPdf
+        examList={normalizedExams}
+        onImported={() => {
+          // PDF 일괄 등록 후 부모(StudyWrite)의 데이터 새로고침이 필요하면
+          // onExamAdd 가 examList 를 다시 fetch 하지는 않지만, Examnumber/Question 은
+          // 새로 생기므로 부모에서 fetchExamNumbers/fetchQuestions 호출이 필요.
+          // 우선 examList 재조회만 트리거.
+          if (typeof onExamAdd === 'function') onExamAdd();
+        }}
+      />
     </div>
   );
 };

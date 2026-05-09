@@ -311,17 +311,7 @@ function ExamIcon({ item }) {
         <div style={{ fontSize: 11, color: "#6b7280" }}>
           {item.year}년
         </div>
-        <div
-          style={{
-            fontSize: 16,
-            fontWeight: 700,
-            color: "#111827",
-            background: "#f0f9ff",
-            border: "1px solid #bae6fd",
-            borderRadius: 6,
-            padding: "2px 8px",
-          }}
-        >
+        <div style={{ fontSize: 11, color: "#6b7280" }}>
           {item.examnumber}회
         </div>
       </div>
