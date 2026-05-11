@@ -914,11 +914,21 @@ def parse_exam_pdf(request):
             status=500,
         )
 
+    # multipart 파일은 stream 위치가 끝에 있을 수 있어 BytesIO 로 명시적으로 감쌈
+    try:
+        f.seek(0)
+    except Exception:
+        pass
+    raw = f.read()
+    if not raw:
+        return JsonResponse({"error": "업로드된 파일 내용이 비어있습니다."}, status=400)
+
+    bio = io.BytesIO(raw)
+
     try:
         all_text = ""
         pages = []
-        # 메모리에서 직접 읽기
-        with pdfplumber.open(f) as pdf:
+        with pdfplumber.open(bio) as pdf:
             for i, page in enumerate(pdf.pages, 1):
                 page_text = page.extract_text() or ""
                 all_text += page_text + "\n"
@@ -932,6 +942,16 @@ def parse_exam_pdf(request):
                 })
         meta = _parse_meta(all_text)
         total = sum(len(p["questions"]) for p in pages)
+        if total == 0 and not all_text.strip():
+            return JsonResponse(
+                {
+                    "error": "PDF에서 텍스트를 추출하지 못했습니다. 스캔 이미지 PDF 이거나 폰트가 임베딩되지 않은 형식일 수 있습니다.",
+                    "detected": meta,
+                    "pages": pages,
+                    "total_questions": 0,
+                },
+                status=200,  # 데이터 없음을 알리되 client 가 에러 핸들링하기 쉽게 200 + 빈 결과
+            )
         return JsonResponse({
             "detected": meta,
             "pages": pages,

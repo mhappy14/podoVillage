@@ -24,6 +24,7 @@ import {
   message,
   Modal,
   Input,
+  Alert,
 } from "antd";
 import {
   LeftOutlined,
@@ -31,9 +32,13 @@ import {
   BookOutlined,
   EditOutlined,
   ToolOutlined,
+  PlusOutlined,
 } from "@ant-design/icons";
 import AxiosInstance from "./AxiosInstance";
 import ExplanationCarousel from "./ExplanationCarousel";
+// import StudyWriteQuestion from "./StudyWriteQuestion";
+// → 모달 안에서는 시험명/회차가 잠긴 inline 폼을 직접 사용 (아래 QuickAddQuestion)
+import { InputNumber, Select } from "antd";
 
 const { Title, Text } = Typography;
 
@@ -83,6 +88,7 @@ const StudyView = () => {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [activeKeys, setActiveKeys] = useState([]); // collapse 상태
+  const [addQOpen, setAddQOpen] = useState(false);  // 문제 등록 모달
 
   useEffect(() => {
     let cancelled = false;
@@ -287,7 +293,9 @@ const StudyView = () => {
         <Card>
           <Empty description="이 회차에 등록된 문제가 없습니다." />
           <div style={{ textAlign: "center", marginTop: 16 }}>
-            <Link to="/study/write"><Button type="primary">문제 등록</Button></Link>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddQOpen(true)}>
+              문제 등록
+            </Button>
           </div>
         </Card>
       ) : (
@@ -325,6 +333,53 @@ const StudyView = () => {
           })}
         />
       )}
+
+      {/* ===== 누락된 문제 추가 등록 버튼 ===== */}
+      {usedQsubjects.length > 0 && (
+        <div style={{ marginTop: 16, textAlign: "center" }}>
+          <Tooltip title="현재 회차에 누락된 문제를 직접 추가합니다">
+            <Button
+              type="dashed"
+              size="large"
+              icon={<PlusOutlined />}
+              onClick={() => setAddQOpen(true)}
+              style={{ minWidth: 240 }}
+            >
+              문제 등록 (누락된 문제 추가)
+            </Button>
+          </Tooltip>
+        </div>
+      )}
+
+      {/* ===== 문제 등록 모달 — StudyWriteQuestion 재사용 ===== */}
+      <Modal
+        title={
+          <span>
+            <PlusOutlined /> 문제 등록 — {examLabel} {examnumber?.year}년 {examnumber?.examnumber}회
+          </span>
+        }
+        open={addQOpen}
+        onCancel={() => setAddQOpen(false)}
+        footer={null}
+        width={760}
+        destroyOnClose
+      >
+        {examnumber && (
+          <QuickAddQuestion
+            examnumber={examnumber}
+            examLabel={examLabel}
+            usedQsubjects={usedQsubjects}
+            onCreated={(newQ) => {
+              setQuestions((prev) => [...prev, newQ]);
+              setAddQOpen(false);
+              // 새 ExamQsubject 가 만들어졌을 수 있으니 재조회
+              AxiosInstance.get("examqsubject/")
+                .then((r) => setQsubjects(asArray(r.data)))
+                .catch(() => {});
+            }}
+          />
+        )}
+      </Modal>
     </div>
   );
 };
@@ -454,6 +509,176 @@ function QuestionBlock({ question: initialQ, explanations, user }) {
         </div>
       </Modal>
     </Card>
+  );
+}
+
+// =====================================================================
+// QuickAddQuestion — StudyView 모달 안 inline 문제 등록 폼
+// ---------------------------------------------------------------------
+// · 시험명·시험회차는 현재 보고 있는 examnumber 에서 자동 설정 (수정 불가)
+// · 사용자 입력: 과목(교시) / 문항번호 / 본문 / qtype
+// · 누락된 ExamQsubject 가 필요하면 자동으로 생성
+// =====================================================================
+function QuickAddQuestion({ examnumber, examLabel, usedQsubjects, onCreated }) {
+  const [qsId, setQsId]       = useState(null);
+  const [qnumber, setQnumber] = useState(1);
+  const [qtext, setQtext]     = useState("");
+  const [qscript, setQscript] = useState("");
+  const [qtype, setQtype]     = useState("Sj");
+  const [saving, setSaving]   = useState(false);
+
+  // 기술사 여부 — examname 으로 추정
+  const examNameForLabel = examnumber?.exam_name || examnumber?.exam?.examname || "";
+  const isEngineer = examNameForLabel.includes("기술사");
+
+  // 과목(교시) 옵션
+  const qsubjectOptions = useMemo(() => {
+    return (usedQsubjects || []).map((qs) => {
+      const hasEst = !!(qs?.est && String(qs.est).trim());
+      const label = hasEst ? `${qs.esn}. ${qs.est}` : `${qs.esn}교시`;
+      return { value: qs.id, label };
+    });
+  }, [usedQsubjects]);
+
+  // 등록된 과목이 0개일 때 안내
+  const hasNoQsubject = qsubjectOptions.length === 0;
+
+  const submit = async () => {
+    if (!qsId) return message.warning("과목(교시)를 선택하세요.");
+    if (!qnumber || qnumber < 1) return message.warning("문항 번호는 1 이상.");
+    if (!qtext.trim()) return message.warning("문제 본문을 입력하세요.");
+
+    setSaving(true);
+    try {
+      const examIdLocal = examnumber.exam?.id ?? examnumber.exam;
+      const res = await AxiosInstance.post("question/", {
+        exam: examIdLocal,
+        examnumber: examnumber.id,
+        examqsubject_id: qsId,
+        qtype,
+        qnumber: Number(qnumber),
+        qtext: qtext.slice(0, 1000),
+        qscript: qscript ? qscript.slice(0, 1000) : "",
+      });
+      message.success("문제가 등록되었습니다.");
+      onCreated?.(res.data);
+      // 초기화
+      setQtext("");
+      setQscript("");
+      setQnumber((n) => Number(n) + 1);
+    } catch (e) {
+      const detail =
+        e?.response?.data
+          ? (typeof e.response.data === "string"
+              ? e.response.data
+              : JSON.stringify(e.response.data))
+          : e?.message;
+      message.error("등록 실패: " + detail);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      {/* 잠긴(read-only) 컨텍스트 표시 */}
+      <div
+        style={{
+          marginBottom: 12,
+          padding: 10,
+          background: "#f9fafb",
+          border: "1px solid #e5e7eb",
+          borderRadius: 6,
+        }}
+      >
+        <Space wrap>
+          <Tag color="blue">시험명</Tag>
+          <Text strong>{examLabel}</Text>
+          <Tag color="green">회차</Tag>
+          <Text strong>{examnumber.year}({examnumber.examnumber}회)</Text>
+          {isEngineer && <Tag color="purple">기술사</Tag>}
+        </Space>
+        <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+          ⓘ 시험명·회차는 현재 보고 있는 회차로 자동 설정되어 수정할 수 없습니다.
+        </div>
+      </div>
+
+      {hasNoQsubject ? (
+        <Alert
+          type="warning"
+          showIcon
+          message="이 회차에 등록된 과목(교시)이 없습니다."
+          description="먼저 시험 등록 페이지에서 과목(교시)을 등록해야 문제를 추가할 수 있습니다."
+        />
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 120px", gap: 8, marginBottom: 10 }}>
+            <div>
+              <Text type="secondary" style={{ fontSize: 11 }}>과목(교시) *</Text>
+              <Select
+                style={{ width: "100%" }}
+                value={qsId}
+                onChange={setQsId}
+                options={qsubjectOptions}
+                placeholder="과목(교시) 선택"
+                showSearch
+                optionFilterProp="label"
+              />
+            </div>
+            <div>
+              <Text type="secondary" style={{ fontSize: 11 }}>문항 번호 *</Text>
+              <InputNumber
+                style={{ width: "100%" }}
+                value={qnumber}
+                onChange={(v) => setQnumber(v || 1)}
+                min={1}
+                max={99}
+              />
+            </div>
+            <div>
+              <Text type="secondary" style={{ fontSize: 11 }}>유형</Text>
+              <Select
+                style={{ width: "100%" }}
+                value={qtype}
+                onChange={setQtype}
+                options={[
+                  { value: "Sj", label: "주관식" },
+                  { value: "Oj", label: "객관식" },
+                ]}
+              />
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            <Text type="secondary" style={{ fontSize: 11 }}>문제 본문 *</Text>
+            <Input.TextArea
+              value={qtext}
+              onChange={(e) => setQtext(e.target.value)}
+              autoSize={{ minRows: 3, maxRows: 8 }}
+              maxLength={1000}
+              showCount
+            />
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            <Text type="secondary" style={{ fontSize: 11 }}>부가 설명 (선택)</Text>
+            <Input.TextArea
+              value={qscript}
+              onChange={(e) => setQscript(e.target.value)}
+              autoSize={{ minRows: 2, maxRows: 6 }}
+              maxLength={1000}
+              showCount
+            />
+          </div>
+
+          <div style={{ textAlign: "right" }}>
+            <Button type="primary" onClick={submit} loading={saving} icon={<PlusOutlined />}>
+              문제 등록
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

@@ -227,8 +227,6 @@ const Study = () => {
       {/* 아이콘 그리드 */}
       {loading ? (
         <div style={{ textAlign: "center", padding: 60 }}><Spin /></div>
-      ) : visible.length === 0 ? (
-        <Empty description="조건에 맞는 시험이 없습니다." />
       ) : (
         <div
           style={{
@@ -238,11 +236,28 @@ const Study = () => {
             justifyContent: "start",
           }}
         >
-          {visible.map((it) => (
-            <Link key={it.id} to={`/study/view/${it.id}`} style={{ textDecoration: "none" }}>
-              <ExamIcon item={it} />
-            </Link>
-          ))}
+          {/* 첫번째 슬롯: 시험 등록 아이콘 (필터 무관 항상 노출) */}
+          <Link to="/study/write" style={{ textDecoration: "none" }}>
+            <RegisterIcon />
+          </Link>
+          {visible.length === 0 ? (
+            <div
+              style={{
+                gridColumn: "2 / -1",
+                color: "#9ca3af",
+                fontSize: 13,
+                padding: "20px 8px",
+              }}
+            >
+              조건에 맞는 시험이 없습니다.
+            </div>
+          ) : (
+            visible.map((it) => (
+              <Link key={it.id} to={`/study/view/${it.id}`} style={{ textDecoration: "none" }}>
+                <ExamIcon item={it} />
+              </Link>
+            ))
+          )}
         </div>
       )}
     </div>
@@ -257,7 +272,7 @@ function ExamIcon({ item }) {
       className="study-exam-icon"
       style={{
         width: 160,
-        height: 120,
+        height: 60,
         borderRadius: 10,
         border: "1px solid #e5e7eb",
         background: "linear-gradient(135deg, #fff 0%, #f5f7fb 100%)",
@@ -314,6 +329,65 @@ function ExamIcon({ item }) {
         <div style={{ fontSize: 11, color: "#6b7280" }}>
           {item.examnumber}회
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- 새 시험 등록 아이콘 (160 × 120) ----------
+function RegisterIcon() {
+  return (
+    <div
+      style={{
+        width: 160,
+        height: 60,
+        borderRadius: 10,
+        border: "2px dashed #93c5fd",
+        background: "linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)",
+        padding: "10px 12px",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        alignItems: "center",
+        cursor: "pointer",
+        transition: "transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.transform = "translateY(-2px)";
+        e.currentTarget.style.boxShadow = "0 6px 16px rgba(22,119,255,0.18)";
+        e.currentTarget.style.borderColor = "#1677ff";
+        e.currentTarget.style.background = "linear-gradient(135deg, #e0f2fe 0%, #dbeafe 100%)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.transform = "translateY(0)";
+        e.currentTarget.style.boxShadow = "none";
+        e.currentTarget.style.borderColor = "#93c5fd";
+        e.currentTarget.style.background = "linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)";
+      }}
+    >
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: "50%",
+          background: "#1677ff",
+          color: "#fff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 22,
+          fontWeight: 700,
+          marginBottom: 6,
+          boxShadow: "0 2px 6px rgba(22,119,255,0.35)",
+        }}
+      >
+        +
+      </div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#1e3a8a" }}>
+        새 시험 등록
+      </div>
+      <div style={{ fontSize: 10, color: "#3b82f6", marginTop: 2 }}>
+        시험명·회차·문제 추가
       </div>
     </div>
   );

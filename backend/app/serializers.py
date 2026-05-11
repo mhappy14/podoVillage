@@ -191,7 +191,8 @@ class OptionSerializer(serializers.ModelSerializer):
 class ExamQsubjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = ExamQsubject
-        fields = ("id", "exam", "examstage", "esn", "est", "slug")
+        # ⚠️ examnumber FK 를 반드시 포함시켜야 frontend 가 보낸 값이 저장됨
+        fields = ("id", "exam", "examnumber", "examstage", "esn", "est", "slug")
 
     def validate(self, attrs):
         # ExamQsubject 모델의 clean 로직(자격증이면 examstage 필수)을 보조 검증
@@ -199,10 +200,13 @@ class ExamQsubjectSerializer(serializers.ModelSerializer):
         examstage = attrs.get("examstage", getattr(self.instance, "examstage", None))
 
         if exam and getattr(exam, "examtype", None) == "License":
-            if not examstage:
-                raise serializers.ValidationError({"examstage": "자격증 시험은 시험단계(examstage)가 반드시 필요합니다."})
+            # ✨ 기술사는 examstage 면제 — model.clean() 과 동일 규칙
+            is_engineer = "기술사" in (getattr(exam, "examname", "") or "")
+            if not is_engineer and not examstage:
+                raise serializers.ValidationError(
+                    {"examstage": "자격증 시험(기술사 제외)은 시험단계(examstage)가 반드시 필요합니다."}
+                )
         else:
-            # License가 아닌 경우 자동 None 강제는 모델 clean/save에서 처리
             pass
         return attrs
 
@@ -287,12 +291,19 @@ class QuestionSerializer(serializers.ModelSerializer):
         return instance
 
 class ExamnumberSerializer(serializers.ModelSerializer):
-    question = QuestionSerializer(source="question_set", many=True, required=False)
-    explanation = ExplanationSerializer(source="explanation_set", many=True, required=False)
-    
+    question = QuestionSerializer(source="question_set", many=True, required=False, read_only=True)
+    explanation = ExplanationSerializer(source="explanation_set", many=True, required=False, read_only=True)
+    # 사람이 읽기 좋은 라벨 — frontend 셀렉터에서 사용
+    label = serializers.SerializerMethodField(read_only=True)
+    # exam 의 라벨(시험명) 도 함께 노출
+    exam_name = serializers.CharField(source="exam.examname", read_only=True, default="")
+
     class Meta:
         model = Examnumber
         fields = "__all__"
+
+    def get_label(self, obj):
+        return f"{obj.year}({obj.examnumber}회)"
 
 class ExamSerializer(serializers.ModelSerializer):
     comment      = CommentSerializer(many=True, read_only=True)

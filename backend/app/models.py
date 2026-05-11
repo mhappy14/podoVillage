@@ -173,21 +173,24 @@ class Examnumber(models.Model):
 	examnumber = models.PositiveIntegerField(null=False, default=1)
 	year = models.PositiveIntegerField(null=False)
 	slug = models.SlugField(unique=True, null=True, blank=True, max_length=255, allow_unicode=True)
-    
+
 	def __str__(self):
-		return str(self.examnumber)
+		# 사람이 읽기 좋은 형태: "YYYY(nnn회)"
+		return f"{self.year}({self.examnumber}회)"
 
 	def save(self, *args, **kwargs):
-		if not self.slug:  # slug가 비어 있을 때만 생성
-			# exam.examname과 examnumber를 결합하여 slug를 생성
-			combined_value = f"{self.exam.ragent} {self.exam.rposition} {self.exam.examname}({self.year}, {self.examnumber}회)"
-			self.slug = combined_value
+		if not self.slug:
+			# slug 형식: "{시험명}-{YYYY}({nnn}회)"
+			# Examname 이 없을 가능성을 대비해 fallback 처리
+			examname = (self.exam.examname if self.exam else "exam") or "exam"
+			self.slug = f"{examname}-{self.year}({self.examnumber}회)"
 		super(Examnumber, self).save(*args, **kwargs)
 
 	class Meta:
 			unique_together = ('exam', 'examnumber')  # 복합 유일성 제약 조건
 
 class ExamQsubject(models.Model):
+    # examstage TYPE은 비-기술사 자격증(1차/2차/3차)에서만 사용. 기술사는 NULL.
     TYPE = (
         ("1st", "1차"),
         ("2nd", "2차"),
@@ -195,23 +198,37 @@ class ExamQsubject(models.Model):
     )
 
     exam = models.ForeignKey(Exam, on_delete=models.SET_NULL, null=True)
+    # ✨ 기술사처럼 회차별로 같은 esn(교시)이 반복되어야 할 때 사용
+    examnumber = models.ForeignKey(Examnumber, on_delete=models.SET_NULL, null=True, blank=True)
     examstage = models.CharField(max_length=3, choices=TYPE, blank=True, null=True)
-    esn = models.PositiveIntegerField()  # 과목번호
-    est = models.CharField(blank=True, max_length=200)  # 과목명
+    esn = models.PositiveIntegerField()  # 과목번호 (기술사: 교시번호 1~4)
+    est = models.CharField(blank=True, max_length=200)  # 과목명 (기술사: 빈 문자열 허용)
     slug = models.SlugField(max_length=255, blank=True, allow_unicode=True)
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=['exam', 'esn'], name='uniq_exam_esn'),
-            models.UniqueConstraint(fields=['exam', 'est'], name='uniq_exam_est'),
+            # ✨ 같은 회차 안에서 esn 이 유일 (기술사 회차별 1~4교시)
+            models.UniqueConstraint(
+                fields=['exam', 'examnumber', 'esn'],
+                name='uniq_exam_examnumber_esn'
+            ),
+            # ✨ est 가 비어있지 않을 때만 (exam, est) unique
+            #    기술사처럼 est="" 인 행이 여러 개 공존할 수 있어야 함
+            models.UniqueConstraint(
+                fields=['exam', 'est'],
+                condition=~Q(est=''),
+                name='uniq_exam_est_non_empty',
+            ),
         ]
-        ordering = ['exam_id', 'esn']
+        ordering = ['exam_id', 'examnumber_id', 'esn']
 
     def clean(self):
+        # 자격증이지만 "기술사"는 examstage 면제
         if self.exam and self.exam.examtype == "License":
-            if not self.examstage:
-                raise ValidationError("자격증 시험은 시험단계(examstage)가 반드시 필요합니다.")
-        # ✅ "기술사"가 아닌 시험은 과목명 필수
+            is_engineer = "기술사" in (self.exam.examname or "")
+            if not is_engineer and not self.examstage:
+                raise ValidationError("자격증 시험(기술사 제외)은 시험단계(examstage)가 반드시 필요합니다.")
+        # "기술사"가 아닌 시험은 과목명 필수
         if self.exam and "기술사" not in (self.exam.examname or ""):
             if not self.est:
                 raise ValidationError("과목명(est)은 반드시 입력해야 합니다.")
@@ -219,7 +236,9 @@ class ExamQsubject(models.Model):
     def save(self, *args, **kwargs):
         self.clean()
         if not self.slug:
-            base = f"{self.esn}-{self.est}" 
+            # 기술사의 경우 est=="" 라 esn 만으로 slug 가 충돌할 수 있어 examnumber 도 포함
+            en_part = f"-en{self.examnumber_id}" if self.examnumber_id else ""
+            base = f"{self.esn}-{self.est}{en_part}"
             self.slug = slugify(base, allow_unicode=True)[:255]
         super().save(*args, **kwargs)
 

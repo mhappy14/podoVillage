@@ -108,8 +108,51 @@ export default function StudyWriteFromPdf({ examList, onImported }) {
   const [examnumber, setExamnumber]     = useState(null);
   const [errorMsg, setErrorMsg]         = useState("");
   const [saveLog, setSaveLog]           = useState([]);   // 등록 결과 로그
+  const [existingMap, setExistingMap]   = useState({});   // {`${stage}-${qnumber}`: question}
 
   const exams = useMemo(() => asArray(examList), [examList]);
+
+  // (선택된 시험 / 회차 / 연도) 변경 시 — 동일 회차에 이미 등록된 문제 조회
+  // existingMap: 키 `${교시}-${문항번호}` → DB question 객체
+  React.useEffect(() => {
+    if (!selectedExamId || !examnumber || !year) {
+      setExistingMap({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        // 1) 동일 (exam, examnumber, year) 인 Examnumber 찾기
+        const enList = await AxiosInstance.get("examnumber/");
+        const matched = asArray(enList.data).find((en) => {
+          const exId = typeof en.exam === "object" ? en.exam?.id : en.exam;
+          return Number(exId) === Number(selectedExamId)
+            && Number(en.examnumber) === Number(examnumber)
+            && Number(en.year) === Number(year);
+        });
+        if (!matched) {
+          if (!cancelled) setExistingMap({});
+          return;
+        }
+        // 2) 해당 examnumber 의 모든 question 가져오기
+        const qList = await AxiosInstance.get("question/");
+        const map = {};
+        for (const q of asArray(qList.data)) {
+          const qEnId = typeof q.examnumber === "object" ? q.examnumber?.id : q.examnumber;
+          if (Number(qEnId) !== Number(matched.id)) continue;
+          const qsObj = q.examqsubject;
+          const esn = typeof qsObj === "object" ? qsObj?.esn : null;
+          if (esn == null || q.qnumber == null) continue;
+          map[`${esn}-${q.qnumber}`] = q;
+        }
+        if (!cancelled) setExistingMap(map);
+      } catch (e) {
+        console.warn("기존 문제 조회 실패:", e);
+        if (!cancelled) setExistingMap({});
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedExamId, examnumber, year]);
 
   // ── PDF 업로드 & 파싱 ──────────────────────────────────────────────
   const beforeUpload = async (file) => {
@@ -376,29 +419,68 @@ export default function StudyWriteFromPdf({ examList, onImported }) {
             defaultActiveKey={parsed.pages?.map((p) => String(p.page_index))}
             style={{ marginBottom: 12 }}
           >
-            {parsed.pages?.map((p) => (
-              <Panel
-                key={String(p.page_index)}
-                header={
-                  <Space>
-                    <Tag color="blue">{p.stage}교시</Tag>
-                    <Text type="secondary">{p.questions?.length || 0}문제</Text>
-                  </Space>
-                }
-              >
-                <List
-                  size="small"
-                  dataSource={p.questions || []}
-                  renderItem={(q) => (
-                    <List.Item style={{ padding: "4px 0" }}>
-                      <Text>
-                        <strong>{q.qnumber}.</strong>&nbsp;{q.qtext}
-                      </Text>
-                    </List.Item>
-                  )}
-                />
-              </Panel>
-            ))}
+            {parsed.pages?.map((p) => {
+              const dupCount = (p.questions || []).filter(
+                (q) => existingMap[`${p.stage}-${q.qnumber}`]
+              ).length;
+              return (
+                <Panel
+                  key={String(p.page_index)}
+                  header={
+                    <Space>
+                      <Tag color="blue">{p.stage}교시</Tag>
+                      <Text type="secondary">{p.questions?.length || 0}문제</Text>
+                      {dupCount > 0 && (
+                        <Tag color="orange">이미 등록 {dupCount}건</Tag>
+                      )}
+                    </Space>
+                  }
+                >
+                  <List
+                    size="small"
+                    dataSource={p.questions || []}
+                    renderItem={(q) => {
+                      const exist = existingMap[`${p.stage}-${q.qnumber}`];
+                      const isDup = !!exist;
+                      return (
+                        <List.Item
+                          style={{
+                            padding: "4px 0",
+                            opacity: isDup ? 0.55 : 1,
+                            background: isDup ? "#fff7ed" : "transparent",
+                          }}
+                        >
+                          <div style={{ width: "100%" }}>
+                            <div>
+                              <Text>
+                                <strong>{q.qnumber}.</strong>&nbsp;{q.qtext}
+                              </Text>
+                              {isDup && (
+                                <Tag color="orange" style={{ marginLeft: 8 }}>
+                                  이미 등록됨 → 건너뜀
+                                </Tag>
+                              )}
+                            </div>
+                            {isDup && (
+                              <div
+                                style={{
+                                  marginTop: 2,
+                                  paddingLeft: 18,
+                                  fontSize: 11,
+                                  color: "#9a3412",
+                                }}
+                              >
+                                · DB 등록 본문: {exist.qtext}
+                              </div>
+                            )}
+                          </div>
+                        </List.Item>
+                      );
+                    }}
+                  />
+                </Panel>
+              );
+            })}
           </Collapse>
 
           {/* 등록 결과 로그 */}

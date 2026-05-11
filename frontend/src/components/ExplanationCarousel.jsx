@@ -82,10 +82,10 @@ function CarouselInner({ explanations, user }) {
   //   · index === total-1 (>0) → [이전 5%][현재 95%]
   //   · total === 1 → [현재 95%]
   const layout = useMemo(() => {
-    if (total === 1) return { prev: 0, cur: 95, next: 0 };
-    if (index === 0) return { prev: 0, cur: 95, next: 5 };
-    if (index === total - 1) return { prev: 5, cur: 95, next: 0 };
-    return { prev: 5, cur: 90, next: 5 };
+    if (total === 1) return { prev: 0, cur: 90, next: 0 };
+    if (index === 0) return { prev: 0, cur: 90, next: 8 };
+    if (index === total - 1) return { prev: 8, cur: 90, next: 0 };
+    return { prev: 7, cur: 85, next: 7 };
   }, [index, total]);
 
   const prevExp = hasPrev ? explanations[index - 1] : null;

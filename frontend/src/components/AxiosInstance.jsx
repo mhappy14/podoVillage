@@ -27,11 +27,15 @@ AxiosInstance.interceptors.request.use(
 AxiosInstance.interceptors.response.use(
 	(response) => {
 		return response
-	}, 
+	},
 	(error) => {
 		if(error.response && error.response.status === 401){
 			localStorage.removeItem('Token')
 		}
+		// ⚠️ 반드시 reject 로 던져야 호출측의 try/catch 가 동작합니다.
+		// 이게 없으면 모든 HTTP 에러가 undefined 로 resolve 되어
+		// "Cannot read properties of undefined (reading 'data')" 에러 발생.
+		return Promise.reject(error);
 	}
 )
 

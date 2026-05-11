@@ -9,7 +9,7 @@
 //     est 는 빈 문자열 ("기술사" 인 경우 모델 clean() 이 허용함)
 // =====================================================================
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   Upload,
   Button,
@@ -22,8 +22,17 @@ import {
   List,
   Spin,
   Alert,
+  Input,
+  InputNumber,
+  Tooltip,
 } from "antd";
-import { InboxOutlined, UploadOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import {
+  InboxOutlined,
+  UploadOutlined,
+  ThunderboltOutlined,
+  DeleteOutlined,
+  CheckCircleOutlined,
+} from "@ant-design/icons";
 import AxiosInstance from "./AxiosInstance";
 
 const { Dragger } = Upload;
@@ -43,8 +52,73 @@ export default function StudyPdfImport({ examList, onImported }) {
   const [year, setYear] = useState(null);
   const [examnumber, setExamnumber] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
+  // 키 `${stage}-${qnumber}` → DB 에 이미 등록된 question
+  const [existingMap, setExistingMap] = useState({});
 
   const exams = useMemo(() => asArray(examList), [examList]);
+
+  // (시험·회차·연도) 셋 다 결정되면 이미 등록된 문제를 DB 에서 조회 → 표시
+  useEffect(() => {
+    if (!selectedExamId || !examnumber || !year) {
+      setExistingMap({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const enList = await AxiosInstance.get("examnumber/");
+        const matched = asArray(enList.data).find((en) => {
+          const eid = typeof en.exam === "object" ? en.exam?.id : en.exam;
+          return Number(eid) === Number(selectedExamId)
+            && Number(en.examnumber) === Number(examnumber)
+            && Number(en.year) === Number(year);
+        });
+        if (!matched) {
+          if (!cancelled) setExistingMap({});
+          return;
+        }
+        const qList = await AxiosInstance.get("question/");
+        const map = {};
+        for (const q of asArray(qList.data)) {
+          const qEnId = typeof q.examnumber === "object" ? q.examnumber?.id : q.examnumber;
+          if (Number(qEnId) !== Number(matched.id)) continue;
+          const qsObj = q.examqsubject;
+          const esn = typeof qsObj === "object" ? qsObj?.esn : null;
+          if (esn == null || q.qnumber == null) continue;
+          map[`${esn}-${q.qnumber}`] = q;
+        }
+        if (!cancelled) setExistingMap(map);
+      } catch (e) {
+        console.warn("기존 문제 조회 실패:", e);
+        if (!cancelled) setExistingMap({});
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedExamId, examnumber, year]);
+
+  // 파싱된 문제의 본문/번호 직접 수정
+  const updateQ = (pageIdx, qIdx, field, val) => {
+    setParsed((prev) => {
+      if (!prev) return prev;
+      const pages = prev.pages.map((p) => ({ ...p, questions: p.questions.slice() }));
+      pages[pageIdx].questions[qIdx] = {
+        ...pages[pageIdx].questions[qIdx],
+        [field]: val,
+      };
+      return { ...prev, pages };
+    });
+  };
+
+  // 파싱된 문제 삭제 (예: 푸터 노이즈가 잘못 들어왔을 때)
+  const removeQ = (pageIdx, qIdx) => {
+    setParsed((prev) => {
+      if (!prev) return prev;
+      const pages = prev.pages.map((p) => ({ ...p, questions: p.questions.slice() }));
+      pages[pageIdx].questions.splice(qIdx, 1);
+      const total = pages.reduce((s, p) => s + p.questions.length, 0);
+      return { ...prev, pages, total_questions: total };
+    });
+  };
 
   // 파일 업로드 핸들러
   const beforeUpload = async (file) => {
@@ -85,77 +159,106 @@ export default function StudyPdfImport({ examList, onImported }) {
 
     setSaving(true);
     try {
-      // 1) Examnumber 생성 (이미 있으면 백엔드 unique 제약으로 실패 → 캐치 후 fetch)
+      // 1) Examnumber 검색 → 없으면 생성
+      //    (POST 후 unique 충돌 catch 보다 GET 후 분기가 안전 — 400 노이즈 제거)
       let examnumberId;
-      try {
-        const enRes = await AxiosInstance.post("examnumber/", {
-          exam: selectedExamId,
-          examnumber,
-          year,
-        });
-        examnumberId = enRes.data?.id;
-      } catch (e) {
-        // unique 충돌 → 기존 회차 검색
-        const list = await AxiosInstance.get("examnumber/");
-        const exist = asArray(list.data).find(
-          (en) => {
-            const eid = typeof en.exam === "object" ? en.exam?.id : en.exam;
-            return Number(eid) === Number(selectedExamId)
-              && Number(en.examnumber) === Number(examnumber)
-              && Number(en.year) === Number(year);
-          }
-        );
-        if (!exist) throw e;
+      const list = await AxiosInstance.get("examnumber/");
+      const exist = asArray(list.data).find(
+        (en) => {
+          const eid = typeof en.exam === "object" ? en.exam?.id : en.exam;
+          return Number(eid) === Number(selectedExamId)
+            && Number(en.examnumber) === Number(examnumber)
+            && Number(en.year) === Number(year);
+        }
+      );
+      if (exist) {
         examnumberId = exist.id;
         message.info("이미 등록된 회차 — 기존 회차에 문제 추가");
+      } else {
+        try {
+          const enRes = await AxiosInstance.post("examnumber/", {
+            exam: selectedExamId,
+            examnumber,
+            year,
+          });
+          examnumberId = enRes?.data?.id;
+        } catch (e) {
+          // 진짜 검증 에러 — 응답 그대로 노출
+          const detail = e?.response?.data
+            ? JSON.stringify(e.response.data)
+            : (e?.message || "회차 등록 실패");
+          throw new Error(`회차 등록 실패: ${detail}`);
+        }
+        if (!examnumberId) {
+          throw new Error("회차 생성 응답에 id 없음");
+        }
       }
 
       // 2) 페이지별 ExamQsubject + Question 등록
       let total = 0;
+      let skipped = 0;
+      let failed = 0;
       for (const p of parsed.pages || []) {
         // ExamQsubject (교시 = esn, est 비움)
         let qsubjectId;
         try {
+          // 모델 변경: ExamQsubject 가 examnumber FK 를 가짐 → 회차별로 구분
           const qsRes = await AxiosInstance.post("examqsubject/", {
             exam: selectedExamId,
+            examnumber: examnumberId,
             esn: p.stage,
             est: "",
-            // examstage 는 기술사가 아닐 수도 있으니 비움
+            examstage: null,
           });
           qsubjectId = qsRes.data?.id;
         } catch (e) {
-          // 이미 존재 → 검색
+          // 이미 존재 → 검색 (exam + examnumber + esn 으로 정확히 매칭)
           const list = await AxiosInstance.get("examqsubject/");
-          const exist = asArray(list.data).find(
-            (qs) => {
-              const eid = typeof qs.exam === "object" ? qs.exam?.id : qs.exam;
-              return Number(eid) === Number(selectedExamId)
-                && Number(qs.esn) === Number(p.stage);
-            }
-          );
+          const exist = asArray(list.data).find((qs) => {
+            const eid  = typeof qs.exam === "object" ? qs.exam?.id : qs.exam;
+            const enid = typeof qs.examnumber === "object" ? qs.examnumber?.id : qs.examnumber;
+            return Number(eid) === Number(selectedExamId)
+              && Number(enid) === Number(examnumberId)
+              && Number(qs.esn) === Number(p.stage);
+          });
           if (!exist) throw e;
           qsubjectId = exist.id;
         }
 
-        // Question 들
+        // Question 들 — 이미 등록된 건은 건너뜀
         for (const q of p.questions || []) {
+          if (!q.qtext || !q.qtext.trim()) continue;
+          if (existingMap[`${p.stage}-${q.qnumber}`]) {
+            skipped += 1;
+            continue;
+          }
           try {
+            // QuestionSerializer 가 examqsubject 를 read-only nested 로 두고
+            // examqsubject_id 를 write-only 필드로 받음 (source="examqsubject")
             await AxiosInstance.post("question/", {
               exam: selectedExamId,
               examnumber: examnumberId,
-              examqsubject: qsubjectId,
+              examqsubject_id: qsubjectId,
               qtype: "Sj",
               qnumber: q.qnumber,
               qtext: q.qtext,
             });
             total += 1;
           } catch (e) {
-            console.warn(`문제 ${p.stage}교시 ${q.qnumber}번 등록 실패:`, e?.response?.data || e);
+            const detail = e?.response?.data
+              ? JSON.stringify(e.response.data)
+              : e?.message;
+            console.warn(`문제 ${p.stage}교시 ${q.qnumber}번 등록 실패:`, detail);
+            failed += 1;
           }
         }
       }
 
-      message.success(`총 ${total}문제 등록 완료`);
+      const summary =
+        `등록 완료 — 신규 ${total}건` +
+        (skipped > 0 ? ` · 이미 등록 ${skipped}건 건너뜀` : "") +
+        (failed > 0  ? ` · 실패 ${failed}건` : "");
+      message.success(summary);
       setParsed(null);
       onImported?.();
     } catch (e) {
@@ -235,25 +338,82 @@ export default function StudyPdfImport({ examList, onImported }) {
             </span>
           </Space>
 
-          {/* 페이지별 문제 미리보기 */}
-          <div style={{ marginTop: 12, maxHeight: 320, overflowY: "auto" }}>
-            {parsed.pages?.map((p) => (
-              <Card key={p.page_index} size="small" style={{ marginBottom: 8 }}>
-                <Tag color="blue">{p.stage}교시</Tag>
-                <Text type="secondary"> {p.questions?.length || 0}문제</Text>
-                <List
-                  size="small"
-                  dataSource={p.questions || []}
-                  renderItem={(q) => (
-                    <List.Item style={{ padding: "4px 0" }}>
-                      <Text>
-                        <strong>{q.qnumber}.</strong> {q.qtext}
-                      </Text>
-                    </List.Item>
-                  )}
-                />
-              </Card>
-            ))}
+          {/* 페이지별 문제 미리보기 — 인라인 편집 + 중복 표시 */}
+          <div style={{ marginTop: 12, maxHeight: 480, overflowY: "auto" }}>
+            {parsed.pages?.map((p, pageIdx) => {
+              const dupCount = (p.questions || []).filter(
+                (q) => existingMap[`${p.stage}-${q.qnumber}`]
+              ).length;
+              return (
+                <Card key={p.page_index} size="small" style={{ marginBottom: 8 }}>
+                  <Space style={{ marginBottom: 6 }}>
+                    <Tag color="blue">{p.stage}교시</Tag>
+                    <Text type="secondary">{p.questions?.length || 0}문제</Text>
+                    {dupCount > 0 && (
+                      <Tag color="orange">이미 등록 {dupCount}건</Tag>
+                    )}
+                  </Space>
+                  {(p.questions || []).map((q, qIdx) => {
+                    const exist = existingMap[`${p.stage}-${q.qnumber}`];
+                    const isDup = !!exist;
+                    return (
+                      <div
+                        key={qIdx}
+                        style={{
+                          display: "flex",
+                          gap: 6,
+                          alignItems: "flex-start",
+                          marginBottom: 6,
+                          padding: 6,
+                          background: isDup ? "#fff7ed" : "transparent",
+                          border: isDup ? "1px solid #fed7aa" : "1px solid transparent",
+                          borderRadius: 4,
+                          opacity: isDup ? 0.85 : 1,
+                        }}
+                      >
+                        <InputNumber
+                          value={q.qnumber}
+                          onChange={(v) => updateQ(pageIdx, qIdx, "qnumber", v || 0)}
+                          min={1}
+                          max={99}
+                          style={{ width: 60, flexShrink: 0 }}
+                          disabled={isDup}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <Input.TextArea
+                            value={q.qtext}
+                            onChange={(e) => updateQ(pageIdx, qIdx, "qtext", e.target.value)}
+                            autoSize={{ minRows: 1, maxRows: 4 }}
+                            maxLength={1000}
+                            disabled={isDup}
+                          />
+                          {isDup && (
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "#9a3412",
+                                marginTop: 2,
+                              }}
+                            >
+                              ⚠ 이미 등록된 문제 — 등록 시 건너뜀 · DB 본문: {exist.qtext} / 수정이 필요하면 해당문제 별 수정하기 버튼을 누르세요
+                            </div>
+                          )}
+                        </div>
+                        <Tooltip title="이 문제 제외 (잘못 인식된 푸터 등)">
+                          <Button
+                            size="small"
+                            type="text"
+                            danger
+                            icon={<DeleteOutlined />}
+                            onClick={() => removeQ(pageIdx, qIdx)}
+                          />
+                        </Tooltip>
+                      </div>
+                    );
+                  })}
+                </Card>
+              );
+            })}
           </div>
 
           <Space style={{ marginTop: 12 }}>

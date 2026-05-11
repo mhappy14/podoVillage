@@ -205,6 +205,23 @@ LOGGING = {
     },
     "root": {
         "handlers": ["console"],
-        "level": "DEBUG",
+        "level": "INFO",  # DEBUG → INFO (pdfminer 폭주 방지)
+    },
+    "loggers": {
+        # pdfminer/pdfplumber 가 매우 verbose 한 DEBUG 로그를 출력하므로
+        # 명시적으로 WARNING 으로 제한
+        "pdfminer":   {"level": "WARNING", "propagate": False, "handlers": ["console"]},
+        "pdfminer.pdfinterp":  {"level": "WARNING", "propagate": False, "handlers": ["console"]},
+        "pdfminer.pdfparser":  {"level": "WARNING", "propagate": False, "handlers": ["console"]},
+        "pdfminer.pdfdocument":{"level": "WARNING", "propagate": False, "handlers": ["console"]},
+        "pdfminer.cmapdb":     {"level": "WARNING", "propagate": False, "handlers": ["console"]},
+        "pdfminer.pdfpage":    {"level": "WARNING", "propagate": False, "handlers": ["console"]},
+        "pdfminer.pdfdevice":  {"level": "WARNING", "propagate": False, "handlers": ["console"]},
+        "pdfminer.converter":  {"level": "WARNING", "propagate": False, "handlers": ["console"]},
+        "pdfminer.psparser":   {"level": "WARNING", "propagate": False, "handlers": ["console"]},
+        "pdfplumber": {"level": "WARNING", "propagate": False, "handlers": ["console"]},
+        "PIL":        {"level": "WARNING", "propagate": False, "handlers": ["console"]},
+        # 우리 앱은 INFO 이상 출력
+        "app": {"level": "INFO", "propagate": True},
     },
 }

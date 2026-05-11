@@ -297,24 +297,32 @@ const StudyWriteQuestion = ({ examList, examNumberList, onQuestionAdd }) => {
 
         {/* 과목(ExamQsubject) / 문항 번호 */}
         <div style={{ display: 'flex', gap: 8 }}>
-          <Form.Item label="과목" required style={{ flex: 1, marginBottom: '0.5rem' }}>
+          <Form.Item label="과목(교시)" required style={{ flex: 1, marginBottom: '0.5rem' }}>
             <Select
               value={selectedQsubject}
               onChange={(v) => {
                 setSelectedQsubject(v);
                 checkDuplicate(v, qnumber);
               }}
-              placeholder={selectedExamNumber ? '과목(ExamQsubject) 선택' : '시험회차를 먼저 선택하세요.'}
+              placeholder={selectedExamNumber ? '과목(교시) 선택' : '시험회차를 먼저 선택하세요.'}
               disabled={!selectedExamNumber}
               showSearch
               optionFilterProp="children"
               allowClear
             >
-              {qsubjectsCache.map((qs) => (
-                <Option key={qs?.id} value={qs?.id}>
-                  {qs?.slug || `${qs?.esn}. ${qs?.est}`}
-                </Option>
-              ))}
+              {qsubjectsCache.map((qs) => {
+                // est(과목명) 가 있으면 "esn. est"
+                // 없으면 (기술사 등) "esn교시"로 표시
+                const hasEst = !!(qs?.est && String(qs.est).trim());
+                const label = hasEst
+                  ? `${qs?.esn}. ${qs.est}`
+                  : `${qs?.esn}교시`;
+                return (
+                  <Option key={qs?.id} value={qs?.id}>
+                    {label}
+                  </Option>
+                );
+              })}
             </Select>
           </Form.Item>
 

@@ -13,7 +13,10 @@ const asArray = (payload) => {
   return [];
 };
 
-const StudyWriteExamnumber = ({ examList, onExamNumberAdd }) => {
+// 기술사 시험은 1~4교시로 자동 생성
+const ENGINEER_PERIODS = [1, 2, 3, 4];
+
+const StudyWriteExamnumber = ({ examList, onExamNumberAdd, onRefreshQuestions }) => {
   const currentYear = new Date().getFullYear();
   const [selectedExam, setSelectedExam] = useState('');
   const [examNumber, setExamNumber] = useState(''); // 문자열로 입력받아 검증
@@ -69,8 +72,36 @@ const StudyWriteExamnumber = ({ examList, onExamNumberAdd }) => {
         examnumber: Number(numStr),
         year: yr,
       });
-      message.success('시험회차가 성공적으로 등록되었습니다.');
-      onExamNumberAdd?.(response.data);
+      const newEn = response.data;
+      onExamNumberAdd?.(newEn);
+
+      // ✨ 기술사 시험이면 1~4교시 ExamQsubject 자동 일괄 생성
+      const examObj = exams.find((e) => String(e.id) === String(examId));
+      const isEngineer = !!examObj && (examObj.examname || '').includes('기술사');
+      if (isEngineer && newEn?.id) {
+        let createdCount = 0;
+        for (const n of ENGINEER_PERIODS) {
+          try {
+            await AxiosInstance.post('examqsubject/', {
+              exam: examId,
+              examnumber: newEn.id,
+              esn: n,
+              est: '',
+              examstage: null,
+            });
+            createdCount += 1;
+          } catch (qe) {
+            console.warn(`${n}교시 자동 등록 실패:`, qe?.response?.data || qe);
+          }
+        }
+        message.success(
+          `시험회차 + 1~4교시 자동 등록 완료 (${createdCount}개 교시)`
+        );
+        // 부모에 시그널이 있으면 question 도 refresh
+        onRefreshQuestions?.();
+      } else {
+        message.success('시험회차가 성공적으로 등록되었습니다.');
+      }
 
       // 초기화
       setSelectedExam('');
