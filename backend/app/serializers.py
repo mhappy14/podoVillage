@@ -488,3 +488,85 @@ class WikiVersionSerializer(serializers.ModelSerializer):
     class Meta:
         model = WikiVersion
         fields = ['id', 'content', 'edited_at', 'nickname', 'nickname_username']
+
+
+# =====================================================================
+# UserFormula — 사용자가 정의한 종합시그널 공식 (1단계)
+# ---------------------------------------------------------------------
+# 클라이언트는 display_text(수학기호 포함)와 compiled_text(JS 호환식)를
+# 함께 전송. 평가는 프론트에서만 수행하지만, 백엔드도 compiled_text 가
+# 화이트리스트 문자/식별자만 포함하는지 1차 검증해 저장.
+# =====================================================================
+
+import re as _re
+
+
+# 한글 등 Unicode 는 string literal (예: w("M2 통화량")) 에 자주 등장 →
+# 일반 문자로는 허용하고, 위험성은 키워드/식별자 화이트리스트로 차단.
+_FORMULA_ALLOWED_CHARS = _re.compile(
+    r"^[\s\d.+\-*/()<>=!&|?:,_\"'\w]+$",
+    flags=_re.UNICODE,
+)
+_FORMULA_ALLOWED_IDENTIFIERS = {
+    # 변수 (summary)
+    "bullW", "bearW", "neutW", "totalW", "count", "score",
+    # Math 헬퍼
+    "Math", "abs", "sqrt", "min", "max", "pow", "log", "log10", "exp",
+    "PI", "E",
+    # 함수 (지표명/시그널)
+    "w", "s",
+    # 진리값
+    "true", "false", "null",
+}
+
+
+class UserFormulaSerializer(serializers.ModelSerializer):
+    user_email = serializers.ReadOnlyField(source='user.email')
+
+    class Meta:
+        model = UserFormula
+        fields = [
+            'id', 'user', 'user_email', 'name', 'description',
+            'display_text', 'compiled_text', 'variables',
+            'is_default', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['user', 'user_email', 'is_default', 'created_at', 'updated_at']
+
+    # ---- validators -------------------------------------------------
+    def validate_name(self, value):
+        v = (value or '').strip()
+        if not v:
+            raise serializers.ValidationError("공식 이름은 비울 수 없습니다.")
+        if len(v) > 100:
+            raise serializers.ValidationError("공식 이름은 100자를 넘을 수 없습니다.")
+        return v
+
+    def validate_compiled_text(self, value):
+        v = (value or '').strip()
+        if not v:
+            raise serializers.ValidationError("평가식이 비어 있습니다.")
+        if len(v) > 1000:
+            raise serializers.ValidationError("평가식이 너무 깁니다 (최대 1000자).")
+        if not _FORMULA_ALLOWED_CHARS.match(v):
+            raise serializers.ValidationError("허용되지 않은 문자가 포함되어 있습니다.")
+        forbidden = ['__', 'constructor', 'prototype', 'eval', 'Function', 'window',
+                     'globalThis', 'this', 'import', 'require', 'process']
+        for kw in forbidden:
+            if kw in v:
+                raise serializers.ValidationError(f"금지된 키워드: {kw}")
+        # 식별자 화이트리스트 — string literal 안의 내용은 건너뛴다.
+        code_only = _re.sub(r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'', '""', v)
+        for ident in _re.findall(r"[A-Za-z_][A-Za-z_0-9]*", code_only):
+            if ident not in _FORMULA_ALLOWED_IDENTIFIERS:
+                raise serializers.ValidationError(
+                    f"허용되지 않은 식별자: {ident}"
+                )
+        return v
+
+    def validate_display_text(self, value):
+        v = (value or '').strip()
+        if not v:
+            raise serializers.ValidationError("표시식이 비어 있습니다.")
+        if len(v) > 2000:
+            raise serializers.ValidationError("표시식이 너무 깁니다 (최대 2000자).")
+        return v

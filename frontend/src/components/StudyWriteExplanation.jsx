@@ -33,6 +33,12 @@ const StudyWriteExplanation = ({
   selectedExplanation = null,
   onSave,
   isEdit = false,
+  // 인라인 모드: StudyView 내 ExplanationCarousel 자리에서 바로 해설 작성
+  inlineMode = false,
+  initialExamId = null,
+  initialExamnumberId = null,
+  initialQuestionId = null,
+  onCancel = null,
 }) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -48,12 +54,20 @@ const StudyWriteExplanation = ({
 
 
   // 초기값
-  const [selectedExam, setSelectedExam] = useState(selectedExplanation?.exam?.id || '');
-  const [selectedExamNumber, setSelectedExamNumber] = useState(selectedExplanation?.examnumber?.id || '');
-  const [selectedQuestion, setSelectedQuestion] = useState(selectedExplanation?.question?.id || '');
+  const [selectedExam, setSelectedExam] = useState(
+    initialExamId || selectedExplanation?.exam?.id || ''
+  );
+  const [selectedExamNumber, setSelectedExamNumber] = useState(
+    initialExamnumberId || selectedExplanation?.examnumber?.id || ''
+  );
+  const [selectedQuestion, setSelectedQuestion] = useState(
+    initialQuestionId || selectedExplanation?.question?.id || ''
+  );
 
   // URL ?question=:id 가 있으면 해당 question 으로부터 exam/examnumber/question 자동 선택
   useEffect(() => {
+    // 인라인 모드는 initialXxx props 로 초기화하므로 URL 파라미터 처리 skip
+    if (inlineMode || initialQuestionId) return;
     const qIdParam = searchParams.get('question');
     if (!qIdParam || isEdit) return;
     const qId = Number(qIdParam);
@@ -65,7 +79,7 @@ const StudyWriteExplanation = ({
     if (eId) setSelectedExam(eId);
     if (enId) setSelectedExamNumber(enId);
     setSelectedQuestion(qId);
-  }, [searchParams, questions, isEdit]);
+  }, [searchParams, questions, isEdit, inlineMode, initialQuestionId]);
   const [selectedMainsubjects, setSelectedMainsubjects] = useState(
     (selectedExplanation?.mainsubject || []).map((ms) => ms.id)
   );
@@ -137,11 +151,28 @@ const StudyWriteExplanation = ({
       if (isEdit && selectedExplanation?.id) {
         const response = await AxiosInstance.patch(`explanation/${selectedExplanation.id}/`, requestData);
         onSave?.(response.data);
-        navigate(`/study/view/${selectedExplanation.id}`);
+        // onSave 가 있으면 부모(StudyEdit)가 navigate 를 담당하므로 여기선 skip.
+        // onSave 없이 단독으로 쓰일 때만 직접 navigate → examnumber ID 기준 URL
+        if (!inlineMode && !onSave) {
+          const enId =
+            response.data?.examnumber?.id ??
+            response.data?.examnumber ??
+            selectedExplanation?.examnumber?.id ??
+            selectedExplanation?.examnumber;
+          navigate(`/study/view/${enId}`);
+        }
       } else {
         const response = await AxiosInstance.post('explanation/', requestData);
         onSave?.(response.data);
-        navigate(`/study/view/${response.data.id}`);
+        if (!inlineMode) {
+          // 신규 저장 후: 해설이 속한 examnumber 의 StudyView 로 이동
+          const enId =
+            response.data?.examnumber?.id ??
+            response.data?.examnumber;
+          navigate(`/study/view/${enId}`);
+        } else {
+          message.success('해설이 저장되었습니다.');
+        }
       }
     } catch (err) {
       const apiMsg =
@@ -197,6 +228,7 @@ const StudyWriteExplanation = ({
                   setSelectedDetailsubjects([]);
                 }}
                 allowClear
+                disabled={inlineMode}
               >
                 {exams.map((exam) => (
                   <Option key={exam?.id} value={exam?.id}>
@@ -216,7 +248,7 @@ const StudyWriteExplanation = ({
                   setSelectedExamNumber(value);
                   setSelectedQuestion('');
                 }}
-                disabled={!selectedExam}
+                disabled={!selectedExam || inlineMode}
                 allowClear
               >
                 {filteredExamNumbers.map((en) => (
@@ -234,7 +266,7 @@ const StudyWriteExplanation = ({
                 placeholder="문항 선택"
                 value={selectedQuestion}
                 onChange={setSelectedQuestion}
-                disabled={!selectedExamNumber}
+                disabled={!selectedExamNumber || inlineMode}
                 allowClear
                 showSearch
                 optionFilterProp="children"
@@ -316,6 +348,11 @@ const StudyWriteExplanation = ({
           <Button type="primary" htmlType="submit" block loading={loading}>
             {isEdit ? '수정하기' : '저장하기'}
           </Button>
+          {inlineMode && onCancel && (
+            <Button onClick={onCancel} block style={{ marginTop: 8 }} disabled={loading}>
+              취소
+            </Button>
+          )}
         </Form.Item>
 
         {errorMessage && <Text type="danger">{errorMessage}</Text>}

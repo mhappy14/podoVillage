@@ -820,6 +820,357 @@ def indicator_snapshots(request):
 
 
 # =====================================================================
+# 개별 종목 지표 — StockDailyData DB + yfinance 실시간 보완
+# ---------------------------------------------------------------------
+# GET /invest/stock-indicators/<symbol>/
+# 응답: {ticker, last_date, price, ma, volume, put_call, high_low, overall}
+# =====================================================================
+from app.models import StockDailyData
+import numpy as np
+
+
+def _ensure_stock_data(ticker: str) -> None:
+    """DB에 최신 데이터가 없으면 yfinance로 400일치 fetch + upsert."""
+    today = _dt.date.today()
+    latest = (
+        StockDailyData.objects
+        .filter(ticker=ticker)
+        .order_by("-date")
+        .values_list("date", flat=True)
+        .first()
+    )
+    # 최근 거래일이 2일 이상 오래됐을 때만 재수집 (주말/공휴일 고려 ≤3일)
+    if latest and (today - latest).days <= 3:
+        return
+
+    try:
+        start = (today - _dt.timedelta(days=420)).strftime("%Y-%m-%d")
+        end   = (today + _dt.timedelta(days=1)).strftime("%Y-%m-%d")
+        df = yf.download(ticker, start=start, end=end,
+                         progress=False, auto_adjust=True, threads=False)
+        if df is None or df.empty:
+            return
+        df = df.reset_index()
+        # yfinance multi-index 대응
+        if hasattr(df.columns, "levels"):
+            df.columns = ["_".join(c).strip("_") for c in df.columns]
+
+        rows = []
+        for _, row in df.iterrows():
+            date_val = row.get("Date") or row.get("date")
+            if hasattr(date_val, "date"):
+                date_val = date_val.date()
+            close = _safe_float(row.get("Close") or row.get(f"Close_{ticker}"))
+            if close is None:
+                continue
+            rows.append(StockDailyData(
+                ticker      = ticker,
+                date        = date_val,
+                open_price  = _safe_float(row.get("Open")   or row.get(f"Open_{ticker}")),
+                high_price  = _safe_float(row.get("High")   or row.get(f"High_{ticker}")),
+                low_price   = _safe_float(row.get("Low")    or row.get(f"Low_{ticker}")),
+                close_price = close,
+                volume      = _safe_int(row.get("Volume")   or row.get(f"Volume_{ticker}")),
+            ))
+
+        # bulk upsert (update_or_create 루프 대신 ignore_conflicts=True)
+        StockDailyData.objects.bulk_create(
+            rows,
+            update_conflicts=True,
+            unique_fields=["ticker", "date"],
+            update_fields=["open_price", "high_price", "low_price",
+                           "close_price", "volume", "fetched_at"],
+        )
+        logger.info("[stock] %s: %d rows upserted", ticker, len(rows))
+    except Exception as e:
+        logger.warning("[stock] %s fetch 실패: %s", ticker, e)
+
+
+def _safe_float(v):
+    try:
+        f = float(v)
+        return None if (f != f) else f  # NaN check
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_int(v):
+    try:
+        f = float(v)
+        return None if (f != f) else int(f)
+    except (TypeError, ValueError):
+        return None
+
+
+def _signal3(condition_bull, condition_bear):
+    """단순 3값 시그널 헬퍼"""
+    if condition_bull:
+        return "bullish"
+    if condition_bear:
+        return "bearish"
+    return "neutral"
+
+
+def _compute_ma_block(rows):
+    """rows: [StockDailyData ...] 날짜 오름차순"""
+    closes = [r.close_price for r in rows if r.close_price is not None]
+    dates  = [str(r.date)   for r in rows if r.close_price is not None]
+    if len(closes) < 20:
+        return None
+
+    def ma(n):
+        return [
+            round(sum(closes[max(0, i - n + 1):i + 1]) / min(n, i + 1), 4)
+            for i in range(len(closes))
+        ]
+
+    ma5  = ma(5)
+    ma20 = ma(20)
+    ma60 = ma(60)
+    ma120= ma(120)
+
+    # 최신값
+    last_close = closes[-1]
+    lma5, lma20, lma60, lma120 = ma5[-1], ma20[-1], ma60[-1], ma120[-1]
+
+    aligned = lma5 > lma20 > lma60 > lma120
+    pct_from_ma20 = round((last_close - lma20) / lma20 * 100, 2) if lma20 else None
+
+    # 시그널: 기본 정배열 조건 (MA5 > MA20 > MA60)
+    signal = _signal3(
+        lma5 > lma20 and lma20 > lma60,
+        lma5 < lma20 and lma20 < lma60,
+    )
+
+    # 60일치 히스토리 (차트용)
+    hist_len = min(60, len(closes))
+    history = [
+        {
+            "date": dates[-hist_len + i],
+            "close": round(closes[-hist_len + i], 4),
+            "ma5":  round(ma5[-hist_len + i], 4),
+            "ma20": round(ma20[-hist_len + i], 4),
+            "ma60": round(ma60[-hist_len + i], 4),
+            "ma120":round(ma120[-hist_len + i], 4),
+        }
+        for i in range(hist_len)
+    ]
+
+    return {
+        "ma5": round(lma5, 4), "ma20": round(lma20, 4),
+        "ma60": round(lma60, 4), "ma120": round(lma120, 4),
+        "close": round(last_close, 4),
+        "aligned": aligned,
+        "pct_from_ma20": pct_from_ma20,
+        "signal": signal,
+        "history": history,
+    }
+
+
+def _compute_volume_block(rows):
+    closes  = [r.close_price for r in rows if r.close_price is not None and r.volume is not None]
+    volumes = [r.volume      for r in rows if r.close_price is not None and r.volume is not None]
+    dates   = [str(r.date)   for r in rows if r.close_price is not None and r.volume is not None]
+    if len(volumes) < 5:
+        return None
+
+    # 20일 평균 거래량
+    avg20 = sum(volumes[-20:]) / min(20, len(volumes))
+    cur_vol = volumes[-1]
+    vol_ratio = round(cur_vol / avg20, 4) if avg20 else None
+
+    # OBV (On-Balance Volume)
+    obv = [0]
+    for i in range(1, len(closes)):
+        if closes[i] > closes[i - 1]:
+            obv.append(obv[-1] + volumes[i])
+        elif closes[i] < closes[i - 1]:
+            obv.append(obv[-1] - volumes[i])
+        else:
+            obv.append(obv[-1])
+
+    # OBV 5일 기울기 부호 → 추세 방향
+    obv_slope = (obv[-1] - obv[-6]) if len(obv) >= 6 else 0
+    price_up  = closes[-1] > closes[-2] if len(closes) >= 2 else False
+
+    # 거래강도 시그널: 거래량 증가 + OBV 상승 = bullish
+    vol_high = vol_ratio and vol_ratio >= 1.2
+    signal = _signal3(
+        vol_high and obv_slope > 0,
+        vol_high and obv_slope < 0,
+    )
+
+    hist_len = min(60, len(volumes))
+    history = [
+        {
+            "date":      dates[-hist_len + i],
+            "volume":    volumes[-hist_len + i],
+            "vol_ratio": round(volumes[-hist_len + i] / avg20, 4) if avg20 else None,
+            "obv":       obv[-hist_len + i],
+        }
+        for i in range(hist_len)
+    ]
+
+    return {
+        "current_vol": cur_vol,
+        "avg_vol_20":  round(avg20),
+        "vol_ratio":   vol_ratio,
+        "obv_slope_5d": obv_slope,
+        "signal": signal,
+        "history": history,
+    }
+
+
+def _compute_put_call(ticker: str):
+    """yfinance 옵션 체인에서 P/C 비율 산출 (최근 3개 만기 합산)."""
+    try:
+        t = yf.Ticker(ticker)
+        exps = t.options  # 만기일 목록 (tuple)
+        if not exps:
+            return {"ratio": None, "signal": "neutral", "note": "옵션 데이터 없음"}
+
+        total_calls = 0
+        total_puts  = 0
+        used_exps   = exps[:3]  # 가장 가까운 3개 만기만
+        for exp in used_exps:
+            chain = t.option_chain(exp)
+            c_vol = chain.calls["volume"].fillna(0).sum()
+            p_vol = chain.puts["volume"].fillna(0).sum()
+            total_calls += int(c_vol)
+            total_puts  += int(p_vol)
+
+        ratio = round(total_puts / total_calls, 4) if total_calls > 0 else None
+        signal = _signal3(ratio is not None and ratio < 0.7,
+                          ratio is not None and ratio > 1.0)
+        return {
+            "ratio":       ratio,
+            "total_calls": total_calls,
+            "total_puts":  total_puts,
+            "expirations_used": list(used_exps),
+            "signal":      signal,
+            "note":        f"최근 {len(used_exps)}개 만기 합산",
+        }
+    except Exception as e:
+        logger.warning("[stock] %s P/C 실패: %s", ticker, e)
+        return {"ratio": None, "signal": "neutral", "note": f"옵션 데이터 오류: {e}"}
+
+
+def _compute_high_low_block(rows):
+    closes     = [r.close_price for r in rows if r.close_price is not None]
+    highs      = [r.high_price  for r in rows if r.high_price  is not None]
+    lows       = [r.low_price   for r in rows if r.low_price   is not None]
+    if not closes:
+        return None
+
+    # 52주(252 거래일) 최고·최저
+    n = min(252, len(closes))
+    w52_high = max(highs[-n:])   if highs  else closes[-1]
+    w52_low  = min(lows[-n:])    if lows   else closes[-1]
+    close    = closes[-1]
+
+    span = w52_high - w52_low
+    position_pct = round((close - w52_low) / span * 100, 2) if span > 0 else 50.0
+    pct_from_high = round((close - w52_high) / w52_high * 100, 2)
+    pct_from_low  = round((close - w52_low)  / w52_low  * 100, 2) if w52_low else None
+
+    signal = _signal3(position_pct >= 70, position_pct <= 30)
+
+    return {
+        "week52_high":  round(w52_high, 4),
+        "week52_low":   round(w52_low, 4),
+        "close":        round(close, 4),
+        "position_pct": position_pct,
+        "pct_from_high": pct_from_high,
+        "pct_from_low":  pct_from_low,
+        "signal": signal,
+    }
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+@cache_page(60 * 10)  # 10분 캐시
+def stock_indicators(request, symbol):
+    """
+    GET /invest/stock-indicators/<symbol>/
+    개별 종목의 이동평균선 / 거래강도 / Put/Call Ratio / 52W 고저 지표 반환.
+    DB에 최신 OHLCV 없으면 yfinance로 자동 수집 후 응답.
+    """
+    ticker = symbol.upper()
+
+    # 1) DB 최신화 (필요 시 yfinance fetch)
+    try:
+        _ensure_stock_data(ticker)
+    except Exception as e:
+        logger.warning("[stock_indicators] %s ensure 실패: %s", ticker, e)
+
+    # 2) DB에서 최근 400행 로드
+    rows = list(
+        StockDailyData.objects
+        .filter(ticker=ticker)
+        .order_by("date")
+        .values_list("date", "open_price", "high_price",
+                     "low_price", "close_price", "volume")
+    )
+    if not rows:
+        return JsonResponse({"error": f"{ticker} 데이터 없음"}, status=404)
+
+    # namedtuple-like 객체로 변환
+    class _Row:
+        __slots__ = ("date", "open_price", "high_price", "low_price", "close_price", "volume")
+        def __init__(self, t):
+            (self.date, self.open_price, self.high_price,
+             self.low_price, self.close_price, self.volume) = t
+
+    rows = [_Row(r) for r in rows]
+    last = rows[-1]
+
+    # 3) 지표 계산
+    ma_block  = _compute_ma_block(rows)
+    vol_block = _compute_volume_block(rows)
+    hl_block  = _compute_high_low_block(rows)
+    pc_block  = _compute_put_call(ticker)
+
+    # 4) 종합 시그널
+    sigs = {
+        "ma":       ma_block["signal"]  if ma_block  else "neutral",
+        "volume":   vol_block["signal"] if vol_block else "neutral",
+        "put_call": pc_block["signal"]  if pc_block  else "neutral",
+        "high_low": hl_block["signal"]  if hl_block  else "neutral",
+    }
+    counts = {"bullish": 0, "bearish": 0, "neutral": 0}
+    for s in sigs.values():
+        counts[s] += 1
+    if counts["bullish"] > counts["bearish"]:
+        overall_signal = "bullish"
+    elif counts["bearish"] > counts["bullish"]:
+        overall_signal = "bearish"
+    else:
+        overall_signal = "neutral"
+    score = (counts["bullish"] - counts["bearish"]) * 25  # -100 ~ +100
+
+    return JsonResponse({
+        "ticker":    ticker,
+        "last_date": str(last.date),
+        "price": {
+            "open":  last.open_price,
+            "high":  last.high_price,
+            "low":   last.low_price,
+            "close": last.close_price,
+        },
+        "ma":       ma_block,
+        "volume":   vol_block,
+        "put_call": pc_block,
+        "high_low": hl_block,
+        "overall": {
+            "signal": overall_signal,
+            "score":  score,
+            "signals": sigs,
+            "counts":  counts,
+        },
+    })
+
+
+# =====================================================================
 # 기술사 기출문제 PDF 자동 파싱 — frontend StudyWriteFromPdf.jsx 호출용
 # ---------------------------------------------------------------------
 # POST /parse-exam-pdf/  (multipart/form-data, file=pdf)

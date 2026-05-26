@@ -13,6 +13,7 @@ from .views import (
     CreateExplanationViewset, CreateCommentViewset,
     AuthorViewSet, AgencyViewSet, PublicationViewSet, PaperViewSet,
     WikiPageViewSet,
+    UserFormulaViewset,
     parse_exam_pdf,
 )
 
@@ -25,6 +26,7 @@ from app.views_invest import (
     market_signals,
     ndx100_list,
     indicator_snapshots,
+    stock_indicators,
     parse_exam_pdf,
 )
 
@@ -34,15 +36,15 @@ router.register('register', RegisterViewset, basename='register')
 router.register('login',    LoginViewset,    basename='login')
 router.register('users',    UserViewset,     basename='users')
 
-# Exam / Question 등
+# Exam / Question
 router.register('exam',         CreateExamViewset,        basename='exam')
 router.register('examnumber',   CreateExamnumberViewset,  basename='examnumber')
 router.register('examqsubject', CreateExamQsubjectViewset,basename='examqsubject')
 router.register('question',     CreateQuestionViewset,    basename='question')
 router.register('mainsubject',  CreateMainsubjectViewset, basename='mainsubject')
 router.register('detailsubject',CreateDetailsubjectViewset,basename='detailsubject')
-router.register('explanation',  CreateExplanationViewset,  basename='explanation')
-router.register('comment',      CreateCommentViewset,      basename='comment')
+router.register('explanation',  CreateExplanationViewset, basename='explanation')
+router.register('comment',      CreateCommentViewset,     basename='comment')
 
 # Essay
 router.register('author',      AuthorViewSet,      basename='author')
@@ -53,16 +55,12 @@ router.register('paper',       PaperViewSet,       basename='paper')
 # Wiki
 router.register('wiki', WikiPageViewSet, basename='wiki')
 
-# router.urls 에 뷰셋 URL 이 모두 모여 있습니다.
+# 사용자 정의 공식 (Inv_indicator)
+router.register('invest/formulas', UserFormulaViewset, basename='user-formula')
+
 urlpatterns = router.urls + [
-    # 기존 FRED 프록시
     path('fred/', fred_proxy, name='fred-proxy'),
-
-    # stock_history: 1년치 yfinance 종가
-    # 기존에 쓰시던 /stock/<symbol>/ 도 살려두었습니다.
     path('stock/<str:symbol>/', stock_history, name='stock-history'),
-
-    # 투자 지표용 별도 엔드포인트
     path('invest/stock-history/<str:symbol>/', stock_history, name='invest-stock-history'),
     path('invest/fred-series/',        fred_series,      name='invest-fred-series'),
     path('invest/fear-greed/',         fear_greed_index, name='invest-fear-greed'),
@@ -70,5 +68,6 @@ urlpatterns = router.urls + [
     path('invest/market-signals/',     market_signals,   name='invest-market-signals'),
     path('invest/ndx100/',             ndx100_list,      name='invest-ndx100'),
     path('invest/indicator-snapshots/', indicator_snapshots, name='invest-indicator-snapshots'),
+    path('invest/stock-indicators/<str:symbol>/', stock_indicators, name='invest-stock-indicators'),
     path('parse-exam-pdf/', parse_exam_pdf, name='parse-exam-pdf'),
 ]

@@ -79,11 +79,11 @@ export const SECTIONS = [
   },
 ];
 
-export const STOCK_LEVEL_PLACEHOLDERS = [
-  { name: "이동평균선 (5/20/60/120일)", note: "정배열·이격도" },
-  { name: "거래강도 (Volume Strength)", note: "거래량 회전율 / OBV" },
-  { name: "Put/Call Ratio", note: "CBOE 옵션 거래 비율" },
-  { name: "신고가/신저가 비율", note: "52W High vs Low Ratio" },
+export const STOCK_INDICATORS = [
+  { name: "이동평균선", key: "ma",       shortName: "MA",   note: "정배열·이격도" },
+  { name: "거래강도",   key: "volume",   shortName: "Vol",  note: "거래량 회전율 / OBV" },
+  { name: "P/C Ratio",  key: "put_call", shortName: "P/C",  note: "CBOE 옵션 거래 비율" },
+  { name: "신고가저가", key: "high_low", shortName: "HiLo", note: "52W High vs Low Ratio" },
 ];
 
 // GICS 분류 (TradingView 히트맵 grouping:"sector" 와 동일 체계)

@@ -66,15 +66,18 @@ const StudyEdit = () => {
     fetchData();
   }, [id]);
 
-  const handleSave = async (updatedData) => {
-    try {
-      await AxiosInstance.patch(`explanation/${id}/`, updatedData);
-      message.success('게시글이 성공적으로 수정되었습니다.');
-      navigate(`/study/view/${id}`);
-    } catch (error) {
-      console.error('게시글 수정 오류:', error);
-      message.error('게시글 수정 중 오류가 발생했습니다.');
-    }
+  // StudyWriteExplanation 이 isEdit 모드에서 PATCH 를 직접 수행하고
+  // response.data 를 넘겨준다. 여기서 두 번 PATCH 하면 nested dict → 500.
+  // → PATCH 없이 navigate 만 처리한다.
+  const handleSave = (updatedData) => {
+    message.success('게시글이 성공적으로 수정되었습니다.');
+    // navigate 목적지는 explanation 이 속한 examnumber 의 StudyView
+    const enId =
+      updatedData?.examnumber?.id ??
+      updatedData?.examnumber ??
+      selectedExplanation?.examnumber?.id ??
+      selectedExplanation?.examnumber;
+    navigate(`/study/view/${enId}`);
   };
 
   return (

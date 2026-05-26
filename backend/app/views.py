@@ -152,6 +152,10 @@ class CreateExamnumberViewset(viewsets.ModelViewSet):
 	queryset = Examnumber.objects.all().select_related("exam")
 	serializer_class = ExamnumberSerializer
 	permission_classes = [permissions.AllowAny]
+	# ✨ /examnumber/?exam=<id> 로 특정 시험의 회차만 가져올 수 있게 함
+	#    (StudyView 등이 전체 회차 + 중첩 questions 까지 다 받아 timeout 나는 문제 방지)
+	filter_backends = [DjangoFilterBackend]
+	filterset_fields = ['exam', 'year', 'examnumber']
 
 	def perform_create(self, serializer):
 		serializer.save()
@@ -171,6 +175,9 @@ class CreateExamQsubjectViewset(viewsets.ModelViewSet):
     queryset = ExamQsubject.objects.all().select_related("exam")
     serializer_class = ExamQsubjectSerializer
     permission_classes = [permissions.AllowAny]
+    # ✨ /examqsubject/?exam=<id>&examnumber=<id> 필터링 지원
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['exam', 'examnumber', 'esn']
 
     def perform_create(self, serializer):
         serializer.save()
@@ -182,6 +189,10 @@ class CreateQuestionViewset(viewsets.ModelViewSet):
     ).prefetch_related("options")
     serializer_class = QuestionSerializer
     permission_classes = [permissions.AllowAny]
+    # ✨ 프론트에서 examnumber·exam·examqsubject 등으로 필터링할 수 있도록
+    #    (PDF 일괄 등록 시 기존 Question 중복 확인용)
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['exam', 'examnumber', 'examqsubject', 'qnumber']
 
     @transaction.atomic
     def perform_create(self, serializer):
@@ -263,6 +274,9 @@ class CreateDetailsubjectViewset(viewsets.ModelViewSet):
 class CreateExplanationViewset(viewsets.ModelViewSet):
 	queryset = Explanation.objects.all().order_by('-created_at')  # 최신 순으로 정렬
 	serializer_class = ExplanationSerializer
+	# ✨ /explanation/?examnumber=<id>&question=<id>&exam=<id> 필터링 지원
+	filter_backends = [DjangoFilterBackend]
+	filterset_fields = ['exam', 'examnumber', 'question']
 
 	# 조회는 비로그인 허용, 작성/수정/삭제는 로그인 필요
 	def get_permissions(self):
@@ -591,3 +605,31 @@ def parse_exam_pdf(request):
         "pages": pages,
         "total_questions": sum(len(p["questions"]) for p in pages),
     })
+
+
+# =====================================================================
+# UserFormulaViewset — 사용자 정의 공식 CRUD (1단계)
+# ---------------------------------------------------------------------
+# 인증된 사용자는 자기 공식만 보고 만들고 수정/삭제할 수 있다.
+# 2단계에서 사용자당 최대 5개 제한을 추가할 예정 (현재는 무제한).
+# =====================================================================
+
+class UserFormulaViewset(viewsets.ModelViewSet):
+    serializer_class = UserFormulaSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if not user.is_authenticated:
+            return UserFormula.objects.none()
+        return UserFormula.objects.filter(user=user).order_by('-updated_at')
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+    def perform_update(self, serializer):
+        # 소유자만 수정 가능 (get_queryset 으로 이미 필터링되지만 한 번 더 가드)
+        from rest_framework.exceptions import PermissionDenied
+        if serializer.instance.user_id != self.request.user.id:
+            raise PermissionDenied("본인 공식만 수정할 수 있습니다.")
+        serializer.save()

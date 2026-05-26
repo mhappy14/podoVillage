@@ -4,7 +4,9 @@ const baseUrl = 'http://127.0.0.1:8000/'
 
 const AxiosInstance = axios.create({
 	baseURL: baseUrl,
-	timeout: 5000, 
+	// ✨ 5s 는 ExamnumberSerializer/ExamSerializer 처럼 nested depth 가 깊은
+	//    응답(수십 KB+)에서 ECONNABORTED 가 발생할 수 있어 안전마진을 둔다.
+	timeout: 30000,
 	headers:{
 		"Content-Type":"application/json",
 		accept: "application/json"

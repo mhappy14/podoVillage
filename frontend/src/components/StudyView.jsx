@@ -38,7 +38,9 @@ import AxiosInstance from "./AxiosInstance";
 import ExplanationCarousel from "./ExplanationCarousel";
 // import StudyWriteQuestion from "./StudyWriteQuestion";
 // → 모달 안에서는 시험명/회차가 잠긴 inline 폼을 직접 사용 (아래 QuickAddQuestion)
-import { InputNumber, Select } from "antd";
+import { InputNumber, Select, Tabs } from "antd";
+import StudyWriteFromPdf from "./StudyWriteFromPdf";
+import StudyWriteExplanation from "./StudyWriteExplanation";
 
 const { Title, Text } = Typography;
 
@@ -85,6 +87,9 @@ const StudyView = () => {
   const [questions, setQuestions] = useState([]);
   const [qsubjects, setQsubjects] = useState([]);
   const [explanations, setExplanations] = useState([]);
+  const [examObj, setExamObj] = useState(null);     // 현재 회차의 Exam 객체 (PDF 모달용)
+  const [mainsubjects, setMainsubjects] = useState([]);   // 해설 인라인 작성용 주요과목
+  const [detailsubjects, setDetailsubjects] = useState([]); // 해설 인라인 작성용 세부과목
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [activeKeys, setActiveKeys] = useState([]); // collapse 상태
@@ -95,19 +100,58 @@ const StudyView = () => {
     setLoading(true);
     (async () => {
       try {
-        const [enRes, allEnRes, qRes, qsRes, exRes] = await Promise.all([
-          AxiosInstance.get(`examnumber/${examnumberId}/`),
-          AxiosInstance.get("examnumber/"),
-          AxiosInstance.get("question/"),
-          AxiosInstance.get("examqsubject/"),
-          AxiosInstance.get("explanation/"),
-        ]);
+        // ── STEP 1: 회차 상세를 먼저 가져온다.
+        //    ExamnumberSerializer 는 nested question/explanation 까지 포함하지만
+        //    하나의 회차이므로 응답 크기 부담이 크지 않다.
+        const enRes = await AxiosInstance.get(`examnumber/${examnumberId}/`);
         if (cancelled) return;
         setExamnumber(enRes.data);
+
+        const enExamId = enRes.data?.exam?.id ?? enRes.data?.exam;
+
+        // ── STEP 2: 회차 상세로부터 examId 를 얻은 뒤,
+        //            나머지 데이터는 서버단 필터로 "이 시험/이 회차"에만 한정해
+        //            병렬로 가져온다. (전체 /question/, /explanation/ 등의
+        //            대용량 응답을 받아 5s 타임아웃 나던 문제 해결)
+        const [allEnRes, qRes, qsRes, exRes, examDetailRes] = await Promise.all([
+          // 같은 시험의 다른 회차들(이전/다음 네비게이션용)
+          AxiosInstance.get("examnumber/", {
+            params: enExamId ? { exam: enExamId } : {},
+          }),
+          AxiosInstance.get("question/", { params: { examnumber: examnumberId } }),
+          AxiosInstance.get("examqsubject/", {
+            params: enExamId ? { exam: enExamId } : {},
+          }),
+          AxiosInstance.get("explanation/", { params: { examnumber: examnumberId } }),
+          // /exam/ 은 depth=3 으로 모든 회차/질문이 nested 돼 매우 무거우므로
+          // 한 건만 가져오는 detail endpoint 로 대체
+          enExamId
+            ? AxiosInstance.get(`exam/${enExamId}/`)
+            : Promise.resolve({ data: null }),
+        ]);
+        if (cancelled) return;
+
         setAllExamnumbers(asArray(allEnRes.data));
         setQuestions(asArray(qRes.data));
         setQsubjects(asArray(qsRes.data));
         setExplanations(asArray(exRes.data));
+        if (examDetailRes?.data) setExamObj(examDetailRes.data);
+
+        // 과목 목록 (해설 인라인 작성용) — 실패해도 메인 로드에 영향 없음
+        if (enExamId) {
+          try {
+            const [mainRes, detailRes] = await Promise.all([
+              AxiosInstance.get("mainsubject/", { params: { exam: enExamId } }),
+              AxiosInstance.get("detailsubject/", { params: { exam: enExamId } }),
+            ]);
+            if (!cancelled) {
+              setMainsubjects(asArray(mainRes.data));
+              setDetailsubjects(asArray(detailRes.data));
+            }
+          } catch (subjErr) {
+            console.warn("과목 목록 로드 실패 (해설 작성 폼용):", subjErr);
+          }
+        }
 
         // 로그인 유저
         const token = localStorage.getItem("Token");
@@ -325,6 +369,15 @@ const StudyView = () => {
                       question={q}
                       explanations={explanations}
                       user={user}
+                      examObj={examObj}
+                      examnumber={examnumber}
+                      allExamnumbers={allExamnumbers}
+                      questions={questions}
+                      mainsubjects={mainsubjects}
+                      detailsubjects={detailsubjects}
+                      onExplanationAdded={(newExp) => {
+                        setExplanations((prev) => [...prev, newExp]);
+                      }}
                     />
                   ))}
                 </div>
@@ -365,18 +418,67 @@ const StudyView = () => {
         destroyOnClose
       >
         {examnumber && (
-          <QuickAddQuestion
-            examnumber={examnumber}
-            examLabel={examLabel}
-            usedQsubjects={usedQsubjects}
-            onCreated={(newQ) => {
-              setQuestions((prev) => [...prev, newQ]);
-              setAddQOpen(false);
-              // 새 ExamQsubject 가 만들어졌을 수 있으니 재조회
-              AxiosInstance.get("examqsubject/")
-                .then((r) => setQsubjects(asArray(r.data)))
-                .catch(() => {});
-            }}
+          <Tabs
+            defaultActiveKey="manual"
+            items={[
+              {
+                key: "manual",
+                label: "수동 입력 (한 문제씩)",
+                children: (
+                  <QuickAddQuestion
+                    examnumber={examnumber}
+                    examLabel={examLabel}
+                    usedQsubjects={usedQsubjects}
+                    onCreated={(newQ) => {
+                      setQuestions((prev) => [...prev, newQ]);
+                      // ✨ 이 시험의 examqsubject 만 다시 가져온다 (전체 X)
+                      const examIdLocal =
+                        examnumber?.exam?.id ?? examnumber?.exam;
+                      AxiosInstance.get("examqsubject/", {
+                        params: examIdLocal ? { exam: examIdLocal } : {},
+                      })
+                        .then((r) => setQsubjects(asArray(r.data)))
+                        .catch(() => {});
+                    }}
+                  />
+                ),
+              },
+              {
+                key: "pdf",
+                label: "PDF 일괄 등록 (기술사 기출)",
+                children: (
+                  <div>
+                    <Alert
+                      type="info"
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                      message={`PDF 업로드 — ${examLabel} ${examnumber?.year}(${examnumber?.examnumber}회) 컨텍스트`}
+                      description="시험명·회차는 현재 보고 있는 시험으로 매핑됩니다. PDF에서 다른 회차가 인식되면 사용자가 수동으로 보정할 수 있습니다."
+                    />
+                    <StudyWriteFromPdf
+                      examList={examObj ? [examObj] : []}
+                      onImported={() => {
+                        // ✨ 등록 후 이 회차/이 시험에 한정된 데이터만 재요청
+                        const examIdLocal =
+                          examnumber?.exam?.id ?? examnumber?.exam;
+                        AxiosInstance.get("question/", {
+                          params: { examnumber: examnumberId },
+                        })
+                          .then((r) => setQuestions(asArray(r.data)))
+                          .catch(() => {});
+                        AxiosInstance.get("examqsubject/", {
+                          params: examIdLocal ? { exam: examIdLocal } : {},
+                        })
+                          .then((r) => setQsubjects(asArray(r.data)))
+                          .catch(() => {});
+                        setAddQOpen(false);
+                        message.success("PDF 일괄 등록 완료");
+                      }}
+                    />
+                  </div>
+                ),
+              },
+            ]}
           />
         )}
       </Modal>
@@ -385,12 +487,24 @@ const StudyView = () => {
 };
 
 // ---------- 한 문제 + 해설 carousel ----------
-function QuestionBlock({ question: initialQ, explanations, user }) {
+function QuestionBlock({
+  question: initialQ,
+  explanations,
+  user,
+  examObj,
+  examnumber,
+  allExamnumbers,
+  questions,
+  mainsubjects,
+  detailsubjects,
+  onExplanationAdded,
+}) {
   const [question, setQuestion] = useState(initialQ);
   const [editOpen, setEditOpen] = useState(false);
   const [editText, setEditText] = useState(initialQ.qtext || "");
   const [editScript, setEditScript] = useState(initialQ.qscript || "");
   const [saving, setSaving] = useState(false);
+  const [showWriteForm, setShowWriteForm] = useState(false);
 
   // ex prop 갱신 동기화
   useEffect(() => {
@@ -433,10 +547,8 @@ function QuestionBlock({ question: initialQ, explanations, user }) {
     }
   };
 
-  // 해설 작성 링크에 exam/examnumber/question id 를 query 로 — auto-select
   const examIdParam = question.exam?.id ?? question.exam ?? "";
   const enIdParam = question.examnumber?.id ?? question.examnumber ?? "";
-  const writeHref = `/study/write?question=${question.id}&exam=${examIdParam}&examnumber=${enIdParam}`;
 
   return (
     <Card
@@ -464,16 +576,38 @@ function QuestionBlock({ question: initialQ, explanations, user }) {
               문제 수정
             </Button>
           </Tooltip>
-          <Link to={writeHref}>
-            <Button size="small" type="primary" icon={<EditOutlined />}>
-              해설 작성
-            </Button>
-          </Link>
+          <Button
+            size="small"
+            type={showWriteForm ? "default" : "primary"}
+            icon={<EditOutlined />}
+            onClick={() => setShowWriteForm((v) => !v)}
+          >
+            {showWriteForm ? "닫기" : "해설 작성"}
+          </Button>
         </Space>
       </div>
 
       <div style={{ marginTop: 12 }}>
-        <ExplanationCarousel explanations={myExps} user={user} />
+        {showWriteForm ? (
+          <StudyWriteExplanation
+            inlineMode
+            examList={examObj ? [examObj] : []}
+            examNumberList={allExamnumbers}
+            questionList={questions}
+            mainsubjectList={mainsubjects}
+            detailsubjectList={detailsubjects}
+            initialExamId={examIdParam}
+            initialExamnumberId={enIdParam}
+            initialQuestionId={question.id}
+            onSave={(newExp) => {
+              onExplanationAdded?.(newExp);
+              setShowWriteForm(false);
+            }}
+            onCancel={() => setShowWriteForm(false)}
+          />
+        ) : (
+          <ExplanationCarousel explanations={myExps} user={user} />
+        )}
       </div>
 
       {/* 문제 수정 모달 */}

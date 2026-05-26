@@ -554,3 +554,81 @@ class IndicatorSnapshot(models.Model):
 
     def __str__(self):
         return f"{self.indicator_key}@{self.quarter_anchor}({self.quarter_date}) = {self.value}"
+
+
+# =====================================================================
+# StockDailyData — 개별 종목 일별 OHLCV (yfinance, 일단위)
+# ---------------------------------------------------------------------
+# /invest/stock-indicators/<symbol>/ 가 이 테이블을 읽어 MA·거래강도·
+# Put/Call·신고가/신저가를 계산해 응답.
+# 직전 거래일 데이터가 없으면 자동 fetch + upsert 후 응답.
+# =====================================================================
+
+class StockDailyData(models.Model):
+    ticker      = models.CharField(max_length=20, db_index=True)
+    date        = models.DateField()
+    open_price  = models.FloatField(null=True, blank=True)
+    high_price  = models.FloatField(null=True, blank=True)
+    low_price   = models.FloatField(null=True, blank=True)
+    close_price = models.FloatField(null=True, blank=True)
+    volume      = models.BigIntegerField(null=True, blank=True)
+    fetched_at  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [("ticker", "date")]
+        indexes = [
+            models.Index(fields=["ticker", "-date"]),
+        ]
+        ordering = ["ticker", "date"]
+        verbose_name = "종목 일별 데이터"
+
+    def __str__(self):
+        return f"{self.ticker} {self.date} C={self.close_price}"
+
+
+# =====================================================================
+# UserFormula — 사용자가 직접 정의한 종합시그널 공식
+# ---------------------------------------------------------------------
+# 1단계: 로그인한 이용자가 수식 빌더 UI 로 만든 공식을 저장.
+#   · display_text  : 화면에 보여줄 표기(예: "(Σ긍정 − Σ부정) / Σw × 100")
+#   · compiled_text : 평가용 표기(JS 호환, 예: "(bullW - bearW) / totalW * 100")
+#   · variables     : 공식 안에서 참조된 변수 목록(검증용 메타데이터)
+#
+# 2단계에서 사용자당 최대 5개 제한을 추가할 예정 (현재는 무제한 + 기본정렬만 적용).
+# =====================================================================
+
+class UserFormula(models.Model):
+    """사용자가 정의한 종합시그널 공식."""
+
+    user = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name="formulas",
+    )
+    name = models.CharField(max_length=100, help_text="공식 이름")
+    description = models.CharField(max_length=255, blank=True, default="")
+
+    # 사람이 읽는 표기 — 수학기호(Σ, ×, ÷, ², √, |·| 등) 포함 가능
+    display_text = models.TextField(help_text="수식 표시 텍스트 (수학기호 포함)")
+    # 평가용 표기 — 프론트에서 안전 평가 가능한 JS 호환 식
+    compiled_text = models.TextField(help_text="평가용 JS 호환 식")
+
+    # 공식 안에서 참조된 변수/함수 메타데이터(예: ["bullW","bearW","totalW"])
+    variables = models.JSONField(default=list, blank=True)
+
+    # 기본 공식 표시 여부(시스템 디폴트는 마이그레이션 후 별도 시드)
+    is_default = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        indexes = [
+            models.Index(fields=["user", "-updated_at"]),
+        ]
+        verbose_name = "사용자 정의 공식"
+        verbose_name_plural = "사용자 정의 공식"
+
+    def __str__(self):
+        return f"[{self.user_id}] {self.name}"

@@ -23,15 +23,28 @@ import {
   MinusOutlined,
   InfoCircleOutlined,
   AppstoreOutlined,
+  LoadingOutlined,
+  WarningOutlined,
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
 } from "@ant-design/icons";
+import { Button, Popconfirm } from "antd";
 import Column from "antd/es/table/Column";
 import {
   SECTIONS,
-  STOCK_LEVEL_PLACEHOLDERS,
+  STOCK_INDICATORS,
   SECTOR_COLOR,
   SECTOR_ABBR,
   NDX100_FALLBACK,
 } from "./inv_indicator/constants";
+import {
+  DEFAULT_FORMULA,
+  makeEvaluator,
+  validateCompiled,
+} from "./inv_indicator/FormulaEngine";
+import FormulaBuilder from "./inv_indicator/FormulaBuilder";
+import useUserFormulas, { isLoggedIn } from "./inv_indicator/useUserFormulas";
 
 const { Title, Text } = Typography;
 
@@ -225,6 +238,132 @@ function WeightInput({ value, onChange, min = 0, max = 100, step = 5, ...rest })
   );
 }
 
+// ---------- 개별 종목 — 시그널 카드 래퍼 ----------
+function StockCard({ title, subtitle, signal, note, extra, children }) {
+  const meta = SIGNAL_META[signal] || SIGNAL_META.neutral;
+  return (
+    <Card
+      size="small"
+      style={{ height: "100%" }}
+      styles={{ body: { padding: 12 } }}
+    >
+      {/* 헤더: 제목 + (ON/OFF 토글) + 시그널 태그 */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6, marginBottom: 4 }}>
+        <div>
+          <Text strong style={{ fontSize: 13, display: "block", lineHeight: 1.3 }}>
+            {title}
+          </Text>
+          {subtitle && (
+            <Text type="secondary" style={{ fontSize: 10 }}>
+              {subtitle}
+            </Text>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+          {extra}
+          <Tag
+            color={meta.color}
+            icon={meta.icon}
+            style={{ marginRight: 0, fontSize: 11 }}
+          >
+            {meta.label}
+          </Tag>
+        </div>
+      </div>
+
+      {/* 노트 한 줄 */}
+      {note && (
+        <Text type="secondary" style={{ fontSize: 11, display: "block", marginBottom: 6 }}>
+          {note}
+        </Text>
+      )}
+
+      <Divider style={{ margin: "6px 0" }} />
+
+      {/* 본문 */}
+      {children}
+    </Card>
+  );
+}
+
+// ---------- 개별 종목 — 미니 스파크라인 (SVG) ----------
+function StockSparkline({ history, yKey = "close", color = "#1677ff", baseline }) {
+  if (!Array.isArray(history) || history.length < 2) return null;
+
+  const values = history.map((d) => d[yKey]).filter((v) => v != null && !Number.isNaN(v));
+  if (values.length < 2) return null;
+
+  const W = 200;
+  const H = 40;
+  const pad = 2;
+
+  const minV = Math.min(...values);
+  const maxV = Math.max(...values);
+  const range = maxV - minV || 1;
+
+  const toX = (i) => pad + (i / (values.length - 1)) * (W - pad * 2);
+  const toY = (v) => H - pad - ((v - minV) / range) * (H - pad * 2);
+
+  // polyline points
+  const pts = values.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`).join(" ");
+
+  // 채워진 영역 (area path)
+  const areaD = [
+    `M ${toX(0).toFixed(1)},${H - pad}`,
+    ...values.map((v, i) => `L ${toX(i).toFixed(1)},${toY(v).toFixed(1)}`),
+    `L ${toX(values.length - 1).toFixed(1)},${H - pad}`,
+    "Z",
+  ].join(" ");
+
+  // baseline 수평선 (예: vol_ratio = 1.0)
+  const baseY = baseline != null ? toY(baseline) : null;
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      width="100%"
+      height={H}
+      style={{ display: "block", marginTop: 8, overflow: "visible" }}
+    >
+      {/* 면적 */}
+      <path
+        d={areaD}
+        fill={color}
+        fillOpacity={0.08}
+        stroke="none"
+      />
+      {/* 기준선 */}
+      {baseY != null && (
+        <line
+          x1={pad}
+          y1={baseY.toFixed(1)}
+          x2={W - pad}
+          y2={baseY.toFixed(1)}
+          stroke="rgba(0,0,0,0.2)"
+          strokeWidth={0.8}
+          strokeDasharray="3 2"
+        />
+      )}
+      {/* 라인 */}
+      <polyline
+        points={pts}
+        fill="none"
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      {/* 마지막 점 */}
+      <circle
+        cx={toX(values.length - 1).toFixed(1)}
+        cy={toY(values[values.length - 1]).toFixed(1)}
+        r={2.5}
+        fill={color}
+      />
+    </svg>
+  );
+}
+
 // ---------- 지표 카드 ----------
 function IndicatorCard({ item, current, prevQ, prevY, weight, onWeightChange, enabled, onToggle }) {
   const noData = !item.seriesId;
@@ -319,6 +458,12 @@ function IndicatorCard({ item, current, prevQ, prevY, weight, onWeightChange, en
   );
 }
 
+// ---------- 공식에 종목별 지표가 포함되어 있는지 확인 ----------
+function formulaHasStockIndicators(formula) {
+  const text = (formula?.compiled_text || "") + (formula?.display_text || "");
+  return STOCK_INDICATORS.some((it) => text.includes(it.name));
+}
+
 // ---------- 메인 컴포넌트 ----------
 export default function InvestIndicator() {
   const [results, setResults] = useState({});
@@ -353,6 +498,42 @@ export default function InvestIndicator() {
   const [ndxList, setNdxList] = useState(NDX100_FALLBACK);
   const [ndxSource, setNdxSource] = useState("fallback"); // 'backend' | 'fallback'
   const [selectedStock, setSelectedStock] = useState(null);
+
+  // 개별 종목 지표 (MA / 거래강도 / P/C / 고저)
+  const [stockData, setStockData] = useState(null);
+  const [stockLoading, setStockLoading] = useState(false);
+  const [stockError, setStockError] = useState(null);
+
+  // 종목 지표별 ON/OFF + 가중치
+  const [stockItemEnabled, setStockItemEnabled] = useState(() => {
+    const init = {};
+    STOCK_INDICATORS.forEach((it) => { init[it.name] = true; });
+    return init;
+  });
+  const setStockItemOn = useCallback((name, v) => {
+    setStockItemEnabled((prev) => ({ ...prev, [name]: v }));
+  }, []);
+
+  const [stockWeights, setStockWeights] = useState(() => {
+    const init = {};
+    STOCK_INDICATORS.forEach((it) => { init[it.name] = 50; });
+    return init;
+  });
+  const setStockWeight = useCallback((name, v) => {
+    setStockWeights((prev) => ({ ...prev, [name]: v }));
+  }, []);
+
+  // ---------- 사용자 정의 공식 (1단계) ----------
+  // 로그인한 사용자는 자기만의 공식을 만들어 저장할 수 있고,
+  // 기본 공식과 자유롭게 전환해 가며 종합시그널을 다르게 산출할 수 있다.
+  const { formulas: userFormulas, upsertLocal, removeFormula, refetch: refetchFormulas } =
+    useUserFormulas();
+  const [activeFormulaId, setActiveFormulaId] = useState(DEFAULT_FORMULA.id);
+  const [marketFormulaId, setMarketFormulaId] = useState(DEFAULT_FORMULA.id);
+  const [stockCardFormulaId, setStockCardFormulaId] = useState(DEFAULT_FORMULA.id);
+  const [builderOpen, setBuilderOpen] = useState(false);
+  const [builderInitial, setBuilderInitial] = useState(null);
+  const loggedIn = isLoggedIn();
 
   // NY 자정까지 남은 시간 (1초마다 갱신) — 데이터 갱신 cron 시각
   const [ttUpdate, setTtUpdate] = useState("--:--:--");
@@ -415,6 +596,34 @@ export default function InvestIndicator() {
     return () => { cancelled = true; };
   }, [refDate]);
 
+  // 개별 종목 지표 fetch — selectedStock 변경 시 자동 호출
+  useEffect(() => {
+    if (!selectedStock) {
+      setStockData(null);
+      setStockError(null);
+      return;
+    }
+    let cancelled = false;
+    setStockLoading(true);
+    setStockError(null);
+    setStockData(null);
+    (async () => {
+      try {
+        const { data } = await axios.get(
+          `/invest/stock-indicators/${selectedStock.ticker}/`,
+          { timeout: 30000 }
+        );
+        if (!cancelled) setStockData(data);
+      } catch (e) {
+        if (!cancelled)
+          setStockError(e?.response?.data?.error || e?.message || "종목 데이터 로드 실패");
+      } finally {
+        if (!cancelled) setStockLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedStock]);
+
   // 백엔드 indicator-snapshots 단일 호출 (DB 캐시 → 매일 자정 업데이트)
   useEffect(() => {
     let cancelled = false;
@@ -472,6 +681,21 @@ export default function InvestIndicator() {
         else neutW += w;
       })
     );
+    // 7. 개별 종목 지표 시그널 반영
+    if (stockData) {
+      STOCK_INDICATORS.forEach((it) => {
+        if (!stockItemEnabled[it.name]) return;
+        const w = stockWeights[it.name] ?? 50;
+        if (w === 0) return;
+        const sig = stockData[it.key]?.signal;
+        if (!sig) return;
+        totalW += w;
+        count += 1;
+        if (sig === "bullish") bullW += w;
+        else if (sig === "bearish") bearW += w;
+        else neutW += w;
+      });
+    }
     const score = totalW ? ((bullW - bearW) / totalW) * 100 : 0;
     let bias = "중립";
     let color = "default";
@@ -479,7 +703,214 @@ export default function InvestIndicator() {
     else if (score < -20) { bias = "부정 (Risk-Off)"; color = "red"; }
     const progressPct = Math.min(100, Math.max(0, (score + 100) / 2));
     return { bullW, bearW, neutW, totalW, count, score, bias, color, progressPct };
+  }, [results, weights, itemEnabled, stockData, stockWeights, stockItemEnabled]);
+
+  // 매크로 지표만으로 계산한 종합 시그널 (종목별 지표 제외 — 전체 시장 카드용)
+  const macroSummary = useMemo(() => {
+    let bullW = 0, bearW = 0, neutW = 0, totalW = 0, count = 0;
+    SECTIONS.forEach((s) =>
+      s.items.forEach((item) => {
+        if (!item.seriesId) return;
+        if (!itemEnabled[item.name]) return;
+        const w = weights[item.name] ?? 50;
+        if (w === 0) return;
+        const r = results[item.seriesId];
+        if (!r?.current || !r?.prevQ) return;
+        const sig = computeSignal(item, r.current, r.prevQ);
+        totalW += w;
+        count += 1;
+        if (sig === "bullish") bullW += w;
+        else if (sig === "bearish") bearW += w;
+        else neutW += w;
+      })
+    );
+    const score = totalW ? ((bullW - bearW) / totalW) * 100 : 0;
+    let bias = "중립"; let color = "default";
+    if (score > 20) { bias = "긍정 (Risk-On)"; color = "green"; }
+    else if (score < -20) { bias = "부정 (Risk-Off)"; color = "red"; }
+    return { bullW, bearW, neutW, totalW, count, score, bias, color };
   }, [results, weights, itemEnabled]);
+
+  // ---------- 활성 공식 ----------
+  const activeFormula = useMemo(() => {
+    if (activeFormulaId === DEFAULT_FORMULA.id) return DEFAULT_FORMULA;
+    return userFormulas.find((f) => f.id === activeFormulaId) || DEFAULT_FORMULA;
+  }, [activeFormulaId, userFormulas]);
+
+  // 활성 공식 평가 결과 (실패 시 기본 score 로 폴백)
+  const formulaResult = useMemo(() => {
+    // signals 맵 구성: 각 매크로 지표명 → "bullish"|"bearish"|"neutral"
+    const signals = {};
+    SECTIONS.forEach((sec) =>
+      sec.items.forEach((it) => {
+        if (!it.seriesId) return;
+        const r = results[it.seriesId];
+        if (!r?.current || !r?.prevQ) return;
+        signals[it.name] = computeSignal(it, r.current, r.prevQ);
+      })
+    );
+    if (stockData) {
+      STOCK_INDICATORS.forEach((it) => {
+        const sig = stockData[it.key]?.signal;
+        if (sig) signals[it.name] = sig;
+      });
+    }
+    // weights 맵: enabled 인 것만 살림
+    const wMap = {};
+    Object.keys(weights).forEach((k) => {
+      if (itemEnabled[k] !== false) wMap[k] = weights[k];
+    });
+    Object.keys(stockWeights).forEach((k) => {
+      if (stockItemEnabled[k] !== false) wMap[k] = stockWeights[k];
+    });
+
+    try {
+      validateCompiled(activeFormula.compiled_text);
+      const evalFn = makeEvaluator(activeFormula.compiled_text);
+      const v = evalFn({
+        bullW: summary.bullW,
+        bearW: summary.bearW,
+        neutW: summary.neutW,
+        totalW: summary.totalW,
+        count: summary.count,
+        score: summary.score,
+        weights: wMap,
+        signals,
+      });
+      const score = Number.isFinite(v) ? v : summary.score;
+      let bias = "중립";
+      let color = "default";
+      if (score > 20) { bias = "긍정 (Risk-On)"; color = "green"; }
+      else if (score < -20) { bias = "부정 (Risk-Off)"; color = "red"; }
+      return { score, bias, color, error: null };
+    } catch (e) {
+      return {
+        score: summary.score, bias: summary.bias, color: summary.color,
+        error: e?.message || "공식 평가 실패",
+      };
+    }
+  }, [activeFormula, summary, results, weights, itemEnabled, stockData, stockWeights, stockItemEnabled]);
+
+  // ---------- 전체 시장 카드용 공식 ----------
+  const marketActiveFormula = useMemo(() => {
+    if (marketFormulaId === DEFAULT_FORMULA.id) return DEFAULT_FORMULA;
+    return userFormulas.find((f) => f.id === marketFormulaId) || DEFAULT_FORMULA;
+  }, [marketFormulaId, userFormulas]);
+
+  const marketFormulaResult = useMemo(() => {
+    // 매크로 전용 signals (종목별 지표는 neutral로 고정)
+    const signals = {};
+    SECTIONS.forEach((sec) =>
+      sec.items.forEach((it) => {
+        if (!it.seriesId) return;
+        const r = results[it.seriesId];
+        if (!r?.current || !r?.prevQ) return;
+        signals[it.name] = computeSignal(it, r.current, r.prevQ);
+      })
+    );
+    STOCK_INDICATORS.forEach((it) => { signals[it.name] = "neutral"; });
+    const wMap = {};
+    Object.keys(weights).forEach((k) => { if (itemEnabled[k] !== false) wMap[k] = weights[k]; });
+    STOCK_INDICATORS.forEach((it) => { wMap[it.name] = 0; });
+    const hasStockInds = formulaHasStockIndicators(marketActiveFormula);
+    try {
+      validateCompiled(marketActiveFormula.compiled_text);
+      const evalFn = makeEvaluator(marketActiveFormula.compiled_text);
+      const v = evalFn({
+        bullW: macroSummary.bullW,
+        bearW: macroSummary.bearW,
+        neutW: macroSummary.neutW,
+        totalW: macroSummary.totalW,
+        count: macroSummary.count,
+        score: macroSummary.score,
+        weights: wMap,
+        signals,
+      });
+      const score = Number.isFinite(v) ? v : macroSummary.score;
+      let bias = "중립"; let color = "default";
+      if (score > 20) { bias = "긍정 (Risk-On)"; color = "green"; }
+      else if (score < -20) { bias = "부정 (Risk-Off)"; color = "red"; }
+      return { score, bias, color, error: null, hasStockInds };
+    } catch (e) {
+      return { score: macroSummary.score, bias: macroSummary.bias, color: macroSummary.color, error: e?.message, hasStockInds };
+    }
+  }, [marketActiveFormula, macroSummary, results, weights, itemEnabled]);
+
+  // ---------- 선택 종목 카드용 공식 ----------
+  const stockCardActiveFormula = useMemo(() => {
+    if (stockCardFormulaId === DEFAULT_FORMULA.id) return DEFAULT_FORMULA;
+    return userFormulas.find((f) => f.id === stockCardFormulaId) || DEFAULT_FORMULA;
+  }, [stockCardFormulaId, userFormulas]);
+
+  const stockCardFormulaResult = useMemo(() => {
+    const signals = {};
+    SECTIONS.forEach((sec) =>
+      sec.items.forEach((it) => {
+        if (!it.seriesId) return;
+        const r = results[it.seriesId];
+        if (!r?.current || !r?.prevQ) return;
+        signals[it.name] = computeSignal(it, r.current, r.prevQ);
+      })
+    );
+    if (stockData) {
+      STOCK_INDICATORS.forEach((it) => {
+        const sig = stockData[it.key]?.signal;
+        if (sig) signals[it.name] = sig;
+      });
+    }
+    const wMap = {};
+    Object.keys(weights).forEach((k) => { if (itemEnabled[k] !== false) wMap[k] = weights[k]; });
+    Object.keys(stockWeights).forEach((k) => { if (stockItemEnabled[k] !== false) wMap[k] = stockWeights[k]; });
+    try {
+      validateCompiled(stockCardActiveFormula.compiled_text);
+      const evalFn = makeEvaluator(stockCardActiveFormula.compiled_text);
+      const v = evalFn({
+        bullW: summary.bullW,
+        bearW: summary.bearW,
+        neutW: summary.neutW,
+        totalW: summary.totalW,
+        count: summary.count,
+        score: summary.score,
+        weights: wMap,
+        signals,
+      });
+      const score = Number.isFinite(v) ? v : summary.score;
+      let bias = "중립"; let color = "default";
+      if (score > 20) { bias = "긍정 (Risk-On)"; color = "green"; }
+      else if (score < -20) { bias = "부정 (Risk-Off)"; color = "red"; }
+      return { score, bias, color, error: null };
+    } catch (e) {
+      return { score: summary.score, bias: summary.bias, color: summary.color, error: e?.message };
+    }
+  }, [stockCardActiveFormula, summary, results, weights, itemEnabled, stockData, stockWeights, stockItemEnabled]);
+
+  // ---------- 빌더 핸들러 ----------
+  const openNewBuilder = useCallback(() => {
+    setBuilderInitial(null);
+    setBuilderOpen(true);
+  }, []);
+  const openEditBuilder = useCallback(() => {
+    if (activeFormula.id === DEFAULT_FORMULA.id) return; // 기본 공식은 편집 불가
+    setBuilderInitial(activeFormula);
+    setBuilderOpen(true);
+  }, [activeFormula]);
+  const handleSaved = useCallback((saved) => {
+    upsertLocal(saved);
+    setActiveFormulaId(saved.id);
+    setBuilderOpen(false);
+  }, [upsertLocal]);
+  const handleDelete = useCallback(async () => {
+    if (activeFormula.id === DEFAULT_FORMULA.id) return;
+    const idToDelete = activeFormula.id;
+    try {
+      await removeFormula(idToDelete);
+      setActiveFormulaId(DEFAULT_FORMULA.id);
+    } catch (e) {
+      // 실패 시 별도 안내 없이 무시 (네트워크 에러는 콘솔로)
+      // eslint-disable-next-line no-console
+      console.warn("delete formula failed:", e);
+    }
+  }, [activeFormula, removeFormula]);
 
   const selectedLabel = selectedStock
     ? `${selectedStock.ticker}${selectedStock.name ? ` — ${selectedStock.name}` : ""}`
@@ -582,74 +1013,123 @@ export default function InvestIndicator() {
       {/* ===== [2/3, 1/3] — 좌:컴팩트 시그널+섹터 / 우:공식+가중치 ===== */}
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }} align="stretch">
         {/* === 좌측 2/3: 컴팩트 시그널 (위) + 섹터 그리드 (아래) === */}
-        <Col xs={24} md={16} style={{ display: "flex", flexDirection: "column" }}>
-          {/* 위: 전체시장 + 종목별 (컴팩트, 1줄) */}
+        <Col xs={24} md={14} style={{ display: "flex", flexDirection: "column" }}>
+          {/* 위: 전체시장 + 종목별 (컴팩트, 1줄 / 1:1:1 분할) */}
           <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+            {/* ── 전체 시장 카드 ── */}
             <Col span={12}>
               <Card
                 size="small"
-                styles={{ body: { padding: "8px 12px" } }}
+                styles={{ body: { padding: "8px 16px" } }}
                 style={{
                   borderColor:
                     summary.color === "green" ? "#52c41a"
                     : summary.color === "red" ? "#ff4d4f" : undefined,
                 }}
               >
-                <Text type="secondary" style={{ fontSize: 10, letterSpacing: 1 }}>
-                  전체 시장
-                </Text>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                  <Title level={5} style={{ margin: 0 }}>{summary.bias}</Title>
-                  <Tag color={summary.color} style={{ marginRight: 0, fontSize: 11 }}>
-                    {summary.score >= 0 ? "+" : ""}{summary.score.toFixed(0)}
-                  </Tag>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {/* 1/3 — 라벨 */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <Text type="secondary" style={{ fontSize: 10, letterSpacing: 1 }}>
+                      전체 시장
+                    </Text>
+                  </div>
+                  {/* 2/3 — 공식 선택 */}
+                  <div style={{ flex: 2, minWidth: 0, display: "flex", alignItems: "center", gap: 4 }}>
+                    <Select
+                      size="small"
+                      value={marketFormulaId}
+                      onChange={(v) => setMarketFormulaId(v)}
+                      style={{ flex: 1, minWidth: 0, fontSize: 10 }}
+                      options={[
+                        { value: DEFAULT_FORMULA.id, label: DEFAULT_FORMULA.name },
+                        ...userFormulas.map((f) => ({ value: f.id, label: f.name })),
+                      ]}
+                    />
+                    {marketFormulaResult.hasStockInds && (
+                      <Tooltip title="이 공식에 종목별 지표(MA·거래강도·P/C Ratio·신고가/신저가)가 포함되어 있어, 전체 시장 카드에서는 해당 지표값을 0으로 처리합니다.">
+                        <WarningOutlined style={{ color: "#faad14", fontSize: 11, flexShrink: 0 }} />
+                      </Tooltip>
+                    )}
+                  </div>
+                  {/* 3/3 — 방향성 + 점수 */}
+                  <div style={{ flex: 3, minWidth: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
+                    <Text style={{ margin: 0, fontSize: 10, whiteSpace: "nowrap" }}>
+                      {marketFormulaResult.bias}
+                    </Text>
+                    <Tag color={marketFormulaResult.color} style={{ marginRight: 0, fontSize: 10, flexShrink: 0 }}>
+                      {marketFormulaResult.score >= 0 ? "+" : ""}{marketFormulaResult.score.toFixed(0)}
+                    </Tag>
+                  </div>
                 </div>
-                <Text type="secondary" style={{ fontSize: 10, display: "block", marginTop: 2 }}>
-                  {summary.count}개 · 긍{summary.bullW} 부{summary.bearW} 중{summary.neutW}
-                </Text>
               </Card>
             </Col>
+
+            {/* ── 선택 종목 카드 ── */}
             <Col span={12}>
               <Card
                 size="small"
                 styles={{ body: { padding: "8px 12px" } }}
               >
                 {selectedStock ? (
-                  <>
-                    <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
-                      <Text type="secondary" style={{ fontSize: 10, letterSpacing: 1 }}>
-                        {selectedStock.ticker}
-                      </Text>
-                      {selectedSector && (
-                        <Tag color={SECTOR_COLOR[selectedSector] || "default"} style={{ marginRight: 0, fontSize: 9, padding: "0 4px", lineHeight: "14px" }}>
-                          {SECTOR_ABBR[selectedSector] || "ETC"}
-                        </Tag>
-                      )}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {/* 1/3 — 티커 + 섹터 태그 (종목명은 툴팁으로) */}
+                    <Tooltip title={selectedStock.name}>
+                      <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 4, flexWrap: "nowrap", cursor: "default" }}>
+                        <Text type="secondary" style={{ fontSize: 10, letterSpacing: 1, whiteSpace: "nowrap" }}>
+                          {selectedStock.ticker}
+                        </Text>
+                        {selectedSector && (
+                          <Tag
+                            color={SECTOR_COLOR[selectedSector] || "default"}
+                            style={{ marginRight: 0, fontSize: 9, padding: "0 4px", lineHeight: "14px", flexShrink: 0 }}
+                          >
+                            {SECTOR_ABBR[selectedSector] || "ETC"}
+                          </Tag>
+                        )}
+                      </div>
+                    </Tooltip>
+                    {/* 2/3 — 공식 선택 */}
+                    <div style={{ flex: 2, minWidth: 0, overflow: "hidden", display: "flex", alignItems: "center" }}>
+                      <Select
+                        size="small"
+                        value={stockCardFormulaId}
+                        onChange={(v) => setStockCardFormulaId(v)}
+                        style={{ width: "100%", fontSize: 10 }}
+                        options={[
+                          { value: DEFAULT_FORMULA.id, label: DEFAULT_FORMULA.name },
+                          ...userFormulas.map((f) => ({ value: f.id, label: f.name })),
+                        ]}
+                      />
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                      <Title level={5} style={{ margin: 0 }}>{summary.bias}</Title>
-                      <Tag color={summary.color} style={{ marginRight: 0, fontSize: 11 }}>
-                        {summary.score >= 0 ? "+" : ""}{summary.score.toFixed(0)}
+                    {/* 3/3 — 방향성 + 점수 */}
+                    <div style={{ flex: 3, minWidth: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                      <Text style={{ margin: 0, fontSize: 10, whiteSpace: "nowrap" }}>
+                        {stockCardFormulaResult.bias}
+                      </Text>
+                      <Tag color={stockCardFormulaResult.color} style={{ marginRight: 0, fontSize: 11, flexShrink: 0 }}>
+                        {stockCardFormulaResult.score >= 0 ? "+" : ""}{stockCardFormulaResult.score.toFixed(0)}
                       </Tag>
                     </div>
-                    <Text type="secondary" style={{ fontSize: 10, display: "block", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {selectedStock.name}
-                    </Text>
-                  </>
+                  </div>
                 ) : (
-                  <>
-                    <Text type="secondary" style={{ fontSize: 10, letterSpacing: 1 }}>
-                      선택 종목
-                    </Text>
-                    <div style={{ marginTop: 2 }}>
-                      <Title level={5} type="secondary" style={{ margin: 0, fontWeight: 400 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {/* 1/2 — 안내 제목 */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <Text type="secondary" style={{ fontSize: 10, margin: 0, fontWeight: 400, whiteSpace: "nowrap" }}>
                         종목 미선택
-                      </Title>
+                      </Text>
                     </div>
-                    <Text type="secondary" style={{ fontSize: 10, display: "block", marginTop: 2 }}>
-                      상단 셀렉터에서 NDX 100 종목 선택
-                    </Text>
-                  </>
+                    {/* 2/2 — 안내 문구 */}
+                    <div style={{ flex: 2, minWidth: 0, overflow: "hidden" }}>
+                      <Text
+                        type="secondary"
+                        style={{ fontSize: 10, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }}
+                      >
+                        상단 셀렉터에서 NDX 100 종목 선택
+                      </Text>
+                    </div>
+                  </div>
                 )}
               </Card>
             </Col>
@@ -688,18 +1168,17 @@ export default function InvestIndicator() {
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
-                    <Tag
-                      color={SECTOR_COLOR[s.sector] || "default"}
-                      style={{ marginRight: 0, fontSize: 10 }}
-                    >
-                      {SECTOR_ABBR[s.sector] || "ETC"}
-                    </Tag>
+                    <Tooltip title={s.sector}>
+                      <Tag
+                        color={SECTOR_COLOR[s.sector] || "default"}
+                        style={{ marginRight: 0, fontSize: 10, cursor: "default" }}
+                      >
+                        {SECTOR_ABBR[s.sector] || "ETC"}
+                      </Tag>
+                    </Tooltip>
                     <Tag color={s.color} style={{ marginRight: 0, fontSize: 11, fontWeight: 600 }}>
                       {s.score >= 0 ? "+" : ""}{s.score.toFixed(0)}
                     </Tag>
-                  </div>
-                  <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.3 }}>
-                    <Text strong style={{ fontSize: 11 }}>{s.sector}</Text>
                   </div>
                   <Text type="secondary" style={{ fontSize: 10 }}>
                     {s.count}종목 · 비중 {s.weight.toFixed(1)}%
@@ -711,7 +1190,7 @@ export default function InvestIndicator() {
         </Col>
 
         {/* === 우측 1/3: 공식 + 인라인 가중치 === */}
-        <Col xs={24} md={8} style={{ display: "flex" }}>
+        <Col xs={24} md={10} style={{ display: "flex" }}>
           <Card
             size="small"
             style={{ flex: 1 }}
@@ -724,8 +1203,54 @@ export default function InvestIndicator() {
                 </Text>
               </span>
             }
+            extra={
+              <Space size={4}>
+                <Select
+                  size="small"
+                  value={activeFormulaId}
+                  onChange={(v) => setActiveFormulaId(v)}
+                  style={{ minWidth: 130 }}
+                  options={[
+                    { value: DEFAULT_FORMULA.id, label: `${DEFAULT_FORMULA.name}` },
+                    ...userFormulas.map((f) => ({ value: f.id, label: f.name })),
+                  ]}
+                />
+                <Tooltip title={loggedIn ? "내 공식 만들기" : "로그인 후 사용 가능"}>
+                  <Button
+                    size="small"
+                    icon={<PlusOutlined />}
+                    onClick={openNewBuilder}
+                    disabled={!loggedIn}
+                  />
+                </Tooltip>
+                <Tooltip title={activeFormula.id === DEFAULT_FORMULA.id ? "기본 공식은 편집 불가" : "공식 편집"}>
+                  <Button
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={openEditBuilder}
+                    disabled={activeFormula.id === DEFAULT_FORMULA.id}
+                  />
+                </Tooltip>
+                <Popconfirm
+                  title="이 공식을 삭제할까요?"
+                  onConfirm={handleDelete}
+                  okText="삭제"
+                  cancelText="취소"
+                  disabled={activeFormula.id === DEFAULT_FORMULA.id}
+                >
+                  <Tooltip title={activeFormula.id === DEFAULT_FORMULA.id ? "기본 공식은 삭제 불가" : "공식 삭제"}>
+                    <Button
+                      size="small"
+                      icon={<DeleteOutlined />}
+                      danger
+                      disabled={activeFormula.id === DEFAULT_FORMULA.id}
+                    />
+                  </Tooltip>
+                </Popconfirm>
+              </Space>
+            }
           >
-            {/* 컴팩트 공식 박스 */}
+            {/* 컴팩트 공식 박스 — 활성 공식 표시 */}
             <div
               style={{
                 fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace',
@@ -740,33 +1265,49 @@ export default function InvestIndicator() {
             >
               <div>
                 <Text strong style={{ fontSize: 11 }}>S</Text>
-                {" = ("}
-                <Text style={{ color: "#3f8600", fontSize: 11 }}>Σ긍정ᵢwᵢ</Text>
-                {" − "}
-                <Text style={{ color: "#cf1322", fontSize: 11 }}>Σ부정ᵢwᵢ</Text>
-                {") / Σwᵢ × 100"}
+                {" = "}
+                <Text style={{ fontSize: 11 }}>{activeFormula.display_text}</Text>
               </div>
               <div>
                 <Text type="secondary" style={{ fontSize: 11 }}>= </Text>
-                ({summary.bullW}−{summary.bearW})/{summary.totalW}×100 ={" "}
-                <Text
-                  strong
-                  style={{
-                    fontSize: 11,
-                    color:
-                      summary.color === "green" ? "#3f8600"
-                      : summary.color === "red" ? "#cf1322"
-                      : undefined,
-                  }}
-                >
-                  {summary.score >= 0 ? "+" : ""}{summary.score.toFixed(1)}
-                </Text>
+                {formulaResult.error ? (
+                  <Text type="danger" style={{ fontSize: 11 }}>
+                    수식 오류: {formulaResult.error}
+                  </Text>
+                ) : (
+                  <>
+                    <Text
+                      strong
+                      style={{
+                        fontSize: 11,
+                        color:
+                          formulaResult.color === "green" ? "#3f8600"
+                          : formulaResult.color === "red" ? "#cf1322"
+                          : undefined,
+                      }}
+                    >
+                      {formulaResult.score >= 0 ? "+" : ""}{formulaResult.score.toFixed(1)}
+                    </Text>
+                    {activeFormula.id !== DEFAULT_FORMULA.id && (
+                      <Text type="secondary" style={{ fontSize: 10, marginLeft: 6 }}>
+                        (기본 공식 {summary.score >= 0 ? "+" : ""}{summary.score.toFixed(1)})
+                      </Text>
+                    )}
+                  </>
+                )}
               </div>
               <div>
                 <Text type="secondary" style={{ fontSize: 10 }}>
-                  임계: |S|&gt;20 → 긍정/부정, 외 → 중립
+                  {activeFormula.description || "임계: |S|>20 → 긍정/부정, 외 → 중립"}
                 </Text>
               </div>
+              {!loggedIn && (
+                <div style={{ marginTop: 4 }}>
+                  <Text type="secondary" style={{ fontSize: 10 }}>
+                    · 로그인하면 직접 공식을 만들어 저장할 수 있습니다.
+                  </Text>
+                </div>
+              )}
             </div>
 
             {/* 컴팩트 인라인 가중치 — 카테고리당 1줄 */}
@@ -825,6 +1366,77 @@ export default function InvestIndicator() {
                 </div>
               );
             })}
+
+            {/* 7. 개별 종목 지표 가중치 행 — 종목 선택 시 표시 */}
+            {selectedStock && (
+              <>
+                <Divider style={{ margin: "4px 0" }} />
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 4,
+                    alignItems: "center",
+                    marginBottom: 3,
+                  }}
+                >
+                  <Tooltip title={`${selectedStock.ticker} 개별 종목 지표`}>
+                    <Text
+                      type="secondary"
+                      style={{ fontSize: 10, minWidth: 38, fontWeight: 600, color: "#1677ff" }}
+                    >
+                      종목
+                    </Text>
+                  </Tooltip>
+                  {STOCK_INDICATORS.map((it) => {
+                    const hasData = !stockLoading && !!stockData?.[it.key];
+                    const enabled = stockItemEnabled[it.name] ?? true;
+                    const dimmed = !hasData || !enabled;
+                    const sig = stockData?.[it.key]?.signal;
+                    const sigColor =
+                      sig === "bullish" ? "#3f8600"
+                      : sig === "bearish" ? "#cf1322"
+                      : "rgba(0,0,0,0.45)";
+                    const tooltip =
+                      `${it.name} (${selectedStock.ticker})`
+                      + (!hasData && !stockLoading ? " — 데이터 없음" : "")
+                      + (stockLoading ? " — 로딩 중" : "")
+                      + (!enabled && hasData ? " (OFF)" : "")
+                      + (sig ? ` · ${SIGNAL_META[sig]?.label ?? ""}` : "");
+                    return (
+                      <Tooltip key={it.name} title={tooltip}>
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 2,
+                            opacity: dimmed ? 0.4 : 1,
+                            cursor: hasData ? "pointer" : "default",
+                          }}
+                          onClick={() => hasData && setStockItemOn(it.name, !enabled)}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 10,
+                              fontFamily: "ui-monospace, monospace",
+                              color: hasData && enabled ? sigColor : undefined,
+                              fontWeight: hasData && enabled ? 700 : 400,
+                            }}
+                          >
+                            {it.shortName}
+                          </Text>
+                          <WeightInput
+                            value={stockWeights[it.name] ?? 50}
+                            onChange={(v) => setStockWeight(it.name, v)}
+                            style={{ width: 46 }}
+                          />
+                        </span>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </Card>
         </Col>
       </Row>
@@ -877,27 +1489,334 @@ export default function InvestIndicator() {
         title={
           <Space>
             <AppstoreOutlined />
-            <span>7. 개별 종목 지표 (추후 작업 예정)</span>
+            <span>7. 개별 종목 지표</span>
+            {selectedStock && (
+              <Tag color={SECTOR_COLOR[selectedStock.sector] || "blue"} style={{ marginLeft: 4 }}>
+                {selectedStock.ticker}
+              </Tag>
+            )}
+            {stockLoading && <LoadingOutlined style={{ color: "#1677ff" }} />}
           </Space>
         }
       >
-        <Row gutter={[12, 12]}>
-          {STOCK_LEVEL_PLACEHOLDERS.map(({ name, note }) => (
-            <Col xs={24} sm={12} md={6} key={name}>
-              <Card
-                size="small"
-                style={{ opacity: 0.6, height: "100%" }}
-                styles={{ body: { padding: 14 } }}
-              >
-                <Text strong style={{ fontSize: 13 }}>{name}</Text>
-                <Divider style={{ margin: "8px 0" }} />
-                <Title level={5} style={{ margin: 0, color: "rgba(0,0,0,0.35)" }}>— (공란)</Title>
-                <Text type="secondary" style={{ fontSize: 11 }}>{note}</Text>
-              </Card>
-            </Col>
-          ))}
-        </Row>
+        {/* 종목 미선택 상태 */}
+        {!selectedStock && (
+          <div style={{ textAlign: "center", padding: "24px 0", color: "rgba(0,0,0,0.35)" }}>
+            <AppstoreOutlined style={{ fontSize: 28, marginBottom: 8 }} />
+            <div>상단 셀렉터에서 NDX 100 종목을 선택하면</div>
+            <div>이동평균선 · 거래강도 · Put/Call Ratio · 신고가/신저가를 분석합니다.</div>
+          </div>
+        )}
+
+        {/* 로딩 */}
+        {selectedStock && stockLoading && (
+          <div style={{ textAlign: "center", padding: "32px 0" }}>
+            <Spin tip={`${selectedStock.ticker} 지표 분석 중... (최초 1회 DB 수집 포함)`}>
+              <div style={{ minHeight: 40 }} />
+            </Spin>
+          </div>
+        )}
+
+        {/* 에러 */}
+        {selectedStock && !stockLoading && stockError && (
+          <Alert type="error" showIcon
+            message={`${selectedStock.ticker} 데이터 로드 실패`}
+            description={stockError}
+          />
+        )}
+
+        {/* 실데이터 카드 */}
+        {selectedStock && !stockLoading && stockData && (
+          <>
+            {/* 종합 시그널 배너 */}
+            <div style={{
+              marginBottom: 12,
+              padding: "8px 12px",
+              borderRadius: 6,
+              background: stockData.overall.signal === "bullish" ? "#f6ffed"
+                : stockData.overall.signal === "bearish" ? "#fff1f0" : "#fafafa",
+              border: `1px solid ${
+                stockData.overall.signal === "bullish" ? "#b7eb8f"
+                : stockData.overall.signal === "bearish" ? "#ffa39e" : "#e0e0e0"
+              }`,
+              display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+            }}>
+              <Text strong>{selectedStock.ticker}</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>종가 ${stockData.price?.close?.toFixed(2)}</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>기준일: {stockData.last_date}</Text>
+              <Tag color={
+                stockData.overall.signal === "bullish" ? "green"
+                : stockData.overall.signal === "bearish" ? "red" : "default"
+              }>
+                종합 {stockData.overall.signal === "bullish" ? "긍정 (Risk-On)"
+                  : stockData.overall.signal === "bearish" ? "부정 (Risk-Off)" : "중립"}
+              </Tag>
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                긍정 {stockData.overall.counts.bullish} / 부정 {stockData.overall.counts.bearish} / 중립 {stockData.overall.counts.neutral}
+              </Text>
+            </div>
+
+            <Row gutter={[12, 12]}>
+              {/* 1) 이동평균선 */}
+              <Col xs={24} sm={12} md={6}>
+                <StockCard
+                  title="이동평균선"
+                  subtitle="5 / 20 / 60 / 120일"
+                  signal={stockItemEnabled["이동평균선"] ? stockData.ma?.signal : "neutral"}
+                  note={stockData.ma?.aligned ? "✅ 완전 정배열" : "⚠ 정배열 아님"}
+                  extra={
+                    <Tooltip title={stockItemEnabled["이동평균선"] ? "종합시그널 반영 ON" : "종합시그널 미반영"}>
+                      <Switch size="small" checked={stockItemEnabled["이동평균선"] ?? true}
+                        onChange={(v) => setStockItemOn("이동평균선", v)} />
+                    </Tooltip>
+                  }
+                >
+                  {stockData.ma ? (
+                    <div style={{ fontSize: 12 }}>
+                      {[
+                        { label: "MA5",  val: stockData.ma.ma5 },
+                        { label: "MA20", val: stockData.ma.ma20 },
+                        { label: "MA60", val: stockData.ma.ma60 },
+                        { label: "MA120",val: stockData.ma.ma120 },
+                      ].map(({ label, val }) => (
+                        <div key={label} style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                          <Text type="secondary" style={{ fontSize: 11 }}>{label}</Text>
+                          <Text style={{ fontSize: 11, fontWeight: 600 }}>${val?.toFixed(2)}</Text>
+                        </div>
+                      ))}
+                      <Divider style={{ margin: "6px 0" }} />
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>MA20 이격도</Text>
+                        <Text style={{
+                          fontSize: 11, fontWeight: 600,
+                          color: stockData.ma.pct_from_ma20 > 0 ? "#3f8600" : "#cf1322",
+                        }}>
+                          {stockData.ma.pct_from_ma20 > 0 ? "+" : ""}{stockData.ma.pct_from_ma20?.toFixed(2)}%
+                        </Text>
+                      </div>
+                      <StockSparkline
+                        history={stockData.ma.history}
+                        yKey="close"
+                        color="#1677ff"
+                      />
+                    </div>
+                  ) : <Text type="secondary" style={{ fontSize: 11 }}>데이터 없음</Text>}
+                </StockCard>
+              </Col>
+
+              {/* 2) 거래강도 */}
+              <Col xs={24} sm={12} md={6}>
+                <StockCard
+                  title="거래강도"
+                  subtitle="거래량 회전율 / OBV"
+                  signal={stockItemEnabled["거래강도"] ? stockData.volume?.signal : "neutral"}
+                  note={`거래량 비율 ${stockData.volume?.vol_ratio?.toFixed(2)}x`}
+                  extra={
+                    <Tooltip title={stockItemEnabled["거래강도"] ? "종합시그널 반영 ON" : "종합시그널 미반영"}>
+                      <Switch size="small" checked={stockItemEnabled["거래강도"] ?? true}
+                        onChange={(v) => setStockItemOn("거래강도", v)} />
+                    </Tooltip>
+                  }
+                >
+                  {stockData.volume ? (
+                    <div style={{ fontSize: 12 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>당일 거래량</Text>
+                        <Text style={{ fontSize: 11, fontWeight: 600 }}>
+                          {(stockData.volume.current_vol / 1e6).toFixed(1)}M
+                        </Text>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>20일 평균</Text>
+                        <Text style={{ fontSize: 11, fontWeight: 600 }}>
+                          {(stockData.volume.avg_vol_20 / 1e6).toFixed(1)}M
+                        </Text>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>거래량 비율</Text>
+                        <Text style={{
+                          fontSize: 11, fontWeight: 600,
+                          color: stockData.volume.vol_ratio >= 1.2 ? "#3f8600" : "rgba(0,0,0,0.65)",
+                        }}>
+                          {stockData.volume.vol_ratio?.toFixed(2)}x
+                        </Text>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>OBV 5일 기울기</Text>
+                        <Text style={{
+                          fontSize: 11, fontWeight: 600,
+                          color: stockData.volume.obv_slope_5d > 0 ? "#3f8600" : "#cf1322",
+                        }}>
+                          {stockData.volume.obv_slope_5d > 0 ? "↑" : "↓"}
+                        </Text>
+                      </div>
+                      <Progress
+                        percent={Math.min(100, (stockData.volume.vol_ratio || 0) * 50)}
+                        size="small"
+                        strokeColor={stockData.volume.vol_ratio >= 1.2 ? "#52c41a" : "#1677ff"}
+                        showInfo={false}
+                        style={{ marginTop: 8 }}
+                      />
+                      
+                      <StockSparkline
+                        history={stockData.volume.history}
+                        yKey="vol_ratio"
+                        color="#722ed1"
+                        baseline={1}
+                      />
+                    </div>
+                  ) : <Text type="secondary" style={{ fontSize: 11 }}>데이터 없음</Text>}
+                </StockCard>
+              </Col>
+
+              {/* 3) Put/Call Ratio */}
+              <Col xs={24} sm={12} md={6}>
+                <StockCard
+                  title="Put/Call Ratio"
+                  subtitle="CBOE 옵션 거래 비율"
+                  signal={stockItemEnabled["P/C Ratio"] ? stockData.put_call?.signal : "neutral"}
+                  note={stockData.put_call?.note}
+                  extra={
+                    <Tooltip title={stockItemEnabled["P/C Ratio"] ? "종합시그널 반영 ON" : "종합시그널 미반영"}>
+                      <Switch size="small" checked={stockItemEnabled["P/C Ratio"] ?? true}
+                        onChange={(v) => setStockItemOn("P/C Ratio", v)} />
+                    </Tooltip>
+                  }
+                >
+                  {stockData.put_call?.ratio != null ? (
+                    <div>
+                      <Statistic
+                        value={stockData.put_call.ratio.toFixed(3)}
+                        valueStyle={{
+                          fontSize: 22, fontWeight: 700,
+                          color: stockData.put_call.ratio < 0.7 ? "#3f8600"
+                            : stockData.put_call.ratio > 1.0 ? "#cf1322" : "rgba(0,0,0,0.65)",
+                        }}
+                      />
+                      <div style={{ marginTop: 4, fontSize: 11 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <Text type="secondary" style={{ fontSize: 11 }}>Call 총 거래량</Text>
+                          <Text style={{ fontSize: 11, fontWeight: 600 }}>
+                            {(stockData.put_call.total_calls / 1e3).toFixed(1)}K
+                          </Text>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
+                          <Text type="secondary" style={{ fontSize: 11 }}>Put 총 거래량</Text>
+                          <Text style={{ fontSize: 11, fontWeight: 600 }}>
+                            {(stockData.put_call.total_puts / 1e3).toFixed(1)}K
+                          </Text>
+                        </div>
+                      </div>
+                      <Divider style={{ margin: "8px 0" }} />
+                      <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)" }}>
+                        <div>· P/C &lt; 0.7 → Call 우세 → 긍정</div>
+                        <div>· P/C &gt; 1.0 → Put 우세 → 부정</div>
+                      </div>
+                      <Progress
+                        percent={Math.min(100, (stockData.put_call.ratio || 0) * 60)}
+                        size="small"
+                        strokeColor={
+                          stockData.put_call.ratio < 0.7 ? "#52c41a"
+                          : stockData.put_call.ratio > 1.0 ? "#ff4d4f" : "#faad14"
+                        }
+                        showInfo={false}
+                        style={{ marginTop: 8 }}
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {stockData.put_call?.note || "옵션 데이터 없음"}
+                      </Text>
+                    </div>
+                  )}
+                </StockCard>
+              </Col>
+
+              {/* 4) 신고가/신저가 비율 */}
+              <Col xs={24} sm={12} md={6}>
+                <StockCard
+                  title="신고가/신저가 위치"
+                  subtitle="52주 고저 상대 위치"
+                  signal={stockData.high_low?.signal}
+                  note={`52W 레인지 내 ${stockData.high_low?.position_pct?.toFixed(1)}% 위치`}
+                >
+                  {stockData.high_low ? (
+                    <div style={{ fontSize: 12 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>52W 최고</Text>
+                        <Text style={{ fontSize: 11, fontWeight: 600, color: "#3f8600" }}>
+                          ${stockData.high_low.week52_high?.toFixed(2)}
+                        </Text>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>현재가</Text>
+                        <Text style={{ fontSize: 11, fontWeight: 700 }}>
+                          ${stockData.high_low.close?.toFixed(2)}
+                        </Text>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>52W 최저</Text>
+                        <Text style={{ fontSize: 11, fontWeight: 600, color: "#cf1322" }}>
+                          ${stockData.high_low.week52_low?.toFixed(2)}
+                        </Text>
+                      </div>
+                      <Progress
+                        percent={stockData.high_low.position_pct}
+                        size="small"
+                        strokeColor={
+                          stockData.high_low.position_pct >= 70 ? "#52c41a"
+                          : stockData.high_low.position_pct <= 30 ? "#ff4d4f" : "#faad14"
+                        }
+                        showInfo={false}
+                      />
+                      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                        <Text type="secondary" style={{ fontSize: 10 }}>저가 기준 +{stockData.high_low.pct_from_low?.toFixed(1)}%</Text>
+                        <Text type="secondary" style={{ fontSize: 10 }}>고가 기준 {stockData.high_low.pct_from_high?.toFixed(1)}%</Text>
+                      </div>
+                      <Divider style={{ margin: "6px 0" }} />
+                      <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)" }}>
+                        <div>· 70% 이상 → 강세 구간 → 긍정</div>
+                        <div>· 30% 이하 → 약세 구간 → 부정</div>
+                      </div>
+                    </div>
+                  ) : <Text type="secondary" style={{ fontSize: 11 }}>데이터 없음</Text>}
+                </StockCard>
+              </Col>
+            </Row>
+          </>
+        )}
       </Card>
+
+      {/* ===== 사용자 정의 공식 빌더 모달 (1단계) ===== */}
+      <FormulaBuilder
+        open={builderOpen}
+        initial={builderInitial}
+        onCancel={() => setBuilderOpen(false)}
+        onSaved={handleSaved}
+        summary={summary}
+        scope={{
+          weights: { ...weights, ...stockWeights },
+          signals: (() => {
+            const sigs = {};
+            SECTIONS.forEach((sec) =>
+              sec.items.forEach((it) => {
+                if (!it.seriesId) return;
+                const r = results[it.seriesId];
+                if (!r?.current || !r?.prevQ) return;
+                sigs[it.name] = computeSignal(it, r.current, r.prevQ);
+              })
+            );
+            if (stockData) {
+              STOCK_INDICATORS.forEach((it) => {
+                const sig = stockData[it.key]?.signal;
+                if (sig) sigs[it.name] = sig;
+              });
+            }
+            return sigs;
+          })(),
+        }}
+      />
     </div>
   );
 }
