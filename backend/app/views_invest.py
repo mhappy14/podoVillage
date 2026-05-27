@@ -820,6 +820,148 @@ def indicator_snapshots(request):
 
 
 # =====================================================================
+# 지표별 5년 히스토리 — 차트용
+# ---------------------------------------------------------------------
+# GET /invest/indicator-history/?key=DGS10&years=5
+# INDICATOR_DEFS 의 kind(fred/yfinance/computed) 에 따라 소스 자동 선택.
+# 응답: { dates: [...], values: [...], kind, ref }
+# 캐시: 1시간
+# =====================================================================
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+@cache_page(60 * 60)
+def indicator_history(request):
+    key   = request.GET.get('key', '')
+    years = min(max(int(request.GET.get('years', 5)), 1), 20)
+
+    defn = next((d for d in INDICATOR_DEFS if d['key'] == key), None)
+    if not defn:
+        return JsonResponse({'error': f'Unknown indicator key: {key}'}, status=400)
+
+    end_date   = _dt.date.today()
+    start_date = _dt.date(end_date.year - years, end_date.month, end_date.day)
+    kind       = defn['kind']
+    ref        = defn.get('ref', '')
+
+    # ── FRED ──────────────────────────────────────────────────────────
+    if kind == 'fred':
+        api_key = getattr(settings, 'FRED_API_KEY', None)
+        if not api_key:
+            return JsonResponse({'error': 'FRED_API_KEY 설정이 없습니다.'}, status=500)
+        try:
+            resp = requests.get(
+                'https://api.stlouisfed.org/fred/series/observations',
+                params={
+                    'series_id':         ref,
+                    'api_key':           api_key,
+                    'file_type':         'json',
+                    'sort_order':        'asc',
+                    'observation_start': start_date.strftime('%Y-%m-%d'),
+                    'observation_end':   end_date.strftime('%Y-%m-%d'),
+                },
+                timeout=15,
+            )
+            resp.raise_for_status()
+            obs    = resp.json().get('observations', [])
+            dates  = [o['date'] for o in obs]
+            values = [None if o['value'] in ('.', '') else float(o['value']) for o in obs]
+            return JsonResponse({'dates': dates, 'values': values, 'kind': 'fred', 'ref': ref})
+        except Exception as e:
+            logger.error("indicator_history FRED %s: %s", ref, e, exc_info=True)
+            return JsonResponse({'error': str(e)}, status=500)
+
+    # ── yfinance ──────────────────────────────────────────────────────
+    if kind == 'yfinance':
+        try:
+            df = yf.download(
+                ref,
+                start=start_date.strftime('%Y-%m-%d'),
+                end=end_date.strftime('%Y-%m-%d'),
+                progress=False,
+                auto_adjust=True,
+                threads=False,
+            )
+            if df is None or df.empty:
+                return JsonResponse({'dates': [], 'values': [], 'kind': 'yfinance', 'ref': ref})
+            close = df['Close']
+            if hasattr(close, 'columns'):
+                close = close.iloc[:, 0]
+            close = close.dropna()
+            dates  = [d.date().isoformat() for d in close.index]
+            values = [round(float(v), 4) for v in close]
+            return JsonResponse({'dates': dates, 'values': values, 'kind': 'yfinance', 'ref': ref})
+        except Exception as e:
+            logger.error("indicator_history yfinance %s: %s", ref, e, exc_info=True)
+            return JsonResponse({'error': str(e)}, status=500)
+
+    # ── computed ──────────────────────────────────────────────────────
+    if kind == 'computed':
+        api_key = getattr(settings, 'FRED_API_KEY', None)
+
+        def _fred_series(sid):
+            r = requests.get(
+                'https://api.stlouisfed.org/fred/series/observations',
+                params={
+                    'series_id':          sid,
+                    'api_key':            api_key,
+                    'file_type':          'json',
+                    'sort_order':         'asc',
+                    'frequency':          'w',
+                    'aggregation_method': 'eop',
+                    'observation_start':  start_date.strftime('%Y-%m-%d'),
+                    'observation_end':    end_date.strftime('%Y-%m-%d'),
+                },
+                timeout=15,
+            )
+            r.raise_for_status()
+            return {
+                o['date']: float(o['value'])
+                for o in r.json().get('observations', [])
+                if o['value'] not in ('.', '')
+            }
+
+        if ref == 'net_liquidity':
+            if not api_key:
+                return JsonResponse({'error': 'FRED_API_KEY 설정이 없습니다.'}, status=500)
+            try:
+                walcl = _fred_series('WALCL')
+                tga   = _fred_series('WTREGEN')
+                rrp   = _fred_series('RRPONTSYD')
+                common = sorted(set(walcl) & set(tga) & set(rrp))
+                # WALCL/WTREGEN: 백만$ → /1000 = 십억$,  RRPONTSYD: 십억$
+                dates  = common
+                values = [round((walcl[d] - tga[d]) / 1000.0 - rrp[d], 2) for d in common]
+                return JsonResponse({'dates': dates, 'values': values, 'kind': 'computed', 'ref': ref})
+            except Exception as e:
+                logger.error("indicator_history NETLIQ: %s", e, exc_info=True)
+                return JsonResponse({'error': str(e)}, status=500)
+
+        if ref == 'spy_tlt_ratio':
+            try:
+                spy_df = yf.download('SPY', start=start_date.strftime('%Y-%m-%d'),
+                                     end=end_date.strftime('%Y-%m-%d'),
+                                     progress=False, auto_adjust=True, threads=False)
+                tlt_df = yf.download('TLT', start=start_date.strftime('%Y-%m-%d'),
+                                     end=end_date.strftime('%Y-%m-%d'),
+                                     progress=False, auto_adjust=True, threads=False)
+                if spy_df.empty or tlt_df.empty:
+                    return JsonResponse({'dates': [], 'values': [], 'kind': 'computed', 'ref': ref})
+                spy_c  = spy_df['Close'].iloc[:, 0] if hasattr(spy_df['Close'], 'columns') else spy_df['Close']
+                tlt_c  = tlt_df['Close'].iloc[:, 0] if hasattr(tlt_df['Close'], 'columns') else tlt_df['Close']
+                ratio  = (spy_c / tlt_c).dropna()
+                dates  = [d.date().isoformat() for d in ratio.index]
+                values = [round(float(v), 4) for v in ratio]
+                return JsonResponse({'dates': dates, 'values': values, 'kind': 'computed', 'ref': ref})
+            except Exception as e:
+                logger.error("indicator_history SPY_TLT: %s", e, exc_info=True)
+                return JsonResponse({'error': str(e)}, status=500)
+
+    # unavailable
+    return JsonResponse({'dates': [], 'values': [], 'kind': 'unavailable', 'ref': ref})
+
+
+# =====================================================================
 # 개별 종목 지표 — StockDailyData DB + yfinance 실시간 보완
 # ---------------------------------------------------------------------
 # GET /invest/stock-indicators/<symbol>/

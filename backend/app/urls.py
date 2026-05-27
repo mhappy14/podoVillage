@@ -26,6 +26,7 @@ from app.views_invest import (
     market_signals,
     ndx100_list,
     indicator_snapshots,
+    indicator_history,
     stock_indicators,
     parse_exam_pdf,
 )
@@ -68,6 +69,7 @@ urlpatterns = router.urls + [
     path('invest/market-signals/',     market_signals,   name='invest-market-signals'),
     path('invest/ndx100/',             ndx100_list,      name='invest-ndx100'),
     path('invest/indicator-snapshots/', indicator_snapshots, name='invest-indicator-snapshots'),
+    path('invest/indicator-history/',   indicator_history,  name='invest-indicator-history'),
     path('invest/stock-indicators/<str:symbol>/', stock_indicators, name='invest-stock-indicators'),
     path('parse-exam-pdf/', parse_exam_pdf, name='parse-exam-pdf'),
 ]

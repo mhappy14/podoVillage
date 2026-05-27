@@ -163,9 +163,9 @@ function WeightGauge({ value, onChange, min = 0, max = 100 }) {
       onMouseDown={(e) => { setDragging(true); setFromX(e.clientX); }}
       title="드래그하거나 마우스 휠을 굴려 가중치를 조절하세요"
       style={{
-        height: 20,
+        height: 18,
         background: "#f0f2f5",
-        borderRadius: 10,
+        borderRadius: 9,
         position: "relative",
         cursor: "ew-resize",
         userSelect: "none",
@@ -189,8 +189,8 @@ function WeightGauge({ value, onChange, min = 0, max = 100 }) {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: 11,
-          fontWeight: 600,
+          fontSize: 10,
+          fontWeight: 500,
           color: pct > 45 ? "#fff" : "rgba(0,0,0,0.65)",
           pointerEvents: "none",
         }}
@@ -364,6 +364,79 @@ function StockSparkline({ history, yKey = "close", color = "#1677ff", baseline }
   );
 }
 
+// ---------- 지표 5년 스파크라인 (SVG) ----------
+function IndicatorSparkline({ dates, values, unit, color = "#1677ff" }) {
+  if (!Array.isArray(values) || values.length < 2) return null;
+
+  // null 제거 후 인덱스 유지
+  const filtered = values
+    .map((v, i) => ({ v, d: dates?.[i] }))
+    .filter((x) => x.v != null && !Number.isNaN(x.v));
+  if (filtered.length < 2) return null;
+
+  const vals = filtered.map((x) => x.v);
+  const W = 260, H = 56, padX = 4, padY = 4;
+  const minV = Math.min(...vals);
+  const maxV = Math.max(...vals);
+  const range = maxV - minV || 1;
+
+  const toX = (i) => padX + (i / (filtered.length - 1)) * (W - padX * 2);
+  const toY = (v) => H - padY - ((v - minV) / range) * (H - padY * 2 - 14);
+
+  const pts = filtered.map((x, i) => `${toX(i).toFixed(1)},${toY(x.v).toFixed(1)}`).join(" ");
+  const areaD = [
+    `M ${toX(0).toFixed(1)},${(H - padY).toFixed(1)}`,
+    ...filtered.map((x, i) => `L ${toX(i).toFixed(1)},${toY(x.v).toFixed(1)}`),
+    `L ${toX(filtered.length - 1).toFixed(1)},${(H - padY).toFixed(1)}`,
+    "Z",
+  ].join(" ");
+
+  const firstDate = filtered[0]?.d?.slice(0, 7) ?? "";
+  const lastDate  = filtered[filtered.length - 1]?.d?.slice(0, 7) ?? "";
+  const lastVal   = filtered[filtered.length - 1].v;
+  const lastX     = toX(filtered.length - 1);
+  const lastY     = toY(lastVal);
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      width="100%"
+      height={H}
+      style={{ display: "block", marginTop: 6, overflow: "visible" }}
+    >
+      {/* 면적 */}
+      <path d={areaD} fill={color} fillOpacity={0.08} stroke="none" />
+      {/* 라인 */}
+      <polyline
+        points={pts}
+        fill="none"
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      {/* 마지막 점 */}
+      <circle cx={lastX.toFixed(1)} cy={lastY.toFixed(1)} r={2.5} fill={color} />
+      {/* 최소/최대 수평 점선 */}
+      <line
+        x1={padX} y1={toY(maxV).toFixed(1)}
+        x2={W - padX} y2={toY(maxV).toFixed(1)}
+        stroke={color} strokeWidth={0.5} strokeDasharray="3 2" opacity={0.4}
+      />
+      {/* 날짜 레이블 (하단) */}
+      <text x={padX} y={H - 1} fontSize={9} fill="rgba(0,0,0,0.35)">{firstDate}</text>
+      <text x={W - padX} y={H - 1} fontSize={9} fill="rgba(0,0,0,0.35)" textAnchor="end">{lastDate}</text>
+      {/* 최솟값/최댓값 레이블 */}
+      <text x={padX + 2} y={toY(maxV) - 2} fontSize={9} fill={color} opacity={0.7}>
+        {formatValue(maxV)}
+      </text>
+      <text x={padX + 2} y={Math.min(toY(minV) + 9, H - 12)} fontSize={9} fill="rgba(0,0,0,0.4)" opacity={0.7}>
+        {formatValue(minV)}
+      </text>
+    </svg>
+  );
+}
+
 // ---------- 지표 카드 ----------
 function IndicatorCard({ item, current, prevQ, prevY, weight, onWeightChange, enabled, onToggle }) {
   const noData = !item.seriesId;
@@ -373,6 +446,38 @@ function IndicatorCard({ item, current, prevQ, prevY, weight, onWeightChange, en
   const yoy = current && prevY ? current.value - prevY.value : null;
   const effectiveOpacity = noData ? 0.55 : enabled ? 1 : 0.6;
 
+  // ── 5년 차트 상태 ──
+  const [chartOpen,    setChartOpen]    = useState(false);
+  const [chartData,    setChartData]    = useState(null);   // { dates, values }
+  const [chartLoading, setChartLoading] = useState(false);
+  const [chartError,   setChartError]   = useState(null);
+
+  const handleChartToggle = useCallback(async () => {
+    if (chartOpen) { setChartOpen(false); return; }
+    setChartOpen(true);
+    if (chartData || chartLoading) return; // 이미 fetch 했거나 진행 중
+    setChartLoading(true);
+    setChartError(null);
+    try {
+      const { data } = await axios.get("/invest/indicator-history/", {
+        params: { key: item.seriesId, years: 5 },
+        timeout: 30000,
+      });
+      if (data.dates?.length) {
+        setChartData({ dates: data.dates, values: data.values });
+      } else {
+        setChartError("데이터 없음");
+      }
+    } catch (e) {
+      setChartError(e?.response?.data?.error || e?.message || "로드 실패");
+    } finally {
+      setChartLoading(false);
+    }
+  }, [chartOpen, chartData, chartLoading, item.seriesId]);
+
+  // 시그널 색상으로 차트 라인 컬러 결정
+  const chartColor = sigQ === "bullish" ? "#3f8600" : sigQ === "bearish" ? "#cf1322" : "#1677ff";
+
   return (
     <Card
       size="small"
@@ -381,21 +486,11 @@ function IndicatorCard({ item, current, prevQ, prevY, weight, onWeightChange, en
     >
       {/* 상단: 이름 + 우상단 토글 스위치 */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-        <Text strong style={{ fontSize: 13, lineHeight: 1.3, flex: 1 }}>
-          {item.name}
-        </Text>
-        {!noData && (
-          <Tooltip title={enabled ? "종합시그널 반영 ON — 끄려면 클릭" : "종합시그널 미반영 — 켜려면 클릭"}>
-            <Switch size="small" checked={enabled} onChange={(v) => onToggle(item.name, v)} />
-          </Tooltip>
-        )}
-      </div>
-
-      {/* 두 번째 줄: FRED 코드 (좌) + 시그널 Tag (우) */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, minHeight: 20 }}>
-        <Text type="secondary" style={{ fontSize: 11 }}>
-          {item.seriesId ? `FRED: ${item.seriesId}` : ""}
-        </Text>
+        <Tooltip title={item.seriesId ? `FRED: ${item.seriesId}` : ""}>
+          <Text strong style={{ fontSize: 13, lineHeight: 1.3, flex: 1 }}>
+            {item.name}
+          </Text>
+        </Tooltip>
         {!noData && (
           <Tag color={meta.color} icon={meta.icon} style={{ marginRight: 0, fontSize: 11 }}>
             {meta.label}
@@ -414,19 +509,21 @@ function IndicatorCard({ item, current, prevQ, prevY, weight, onWeightChange, en
         </div>
       ) : (
         <div>
+          <div style={{display:"flex"}}>
           <Statistic
             value={current ? formatValue(current.value) : "—"}
             suffix={<Text type="secondary" style={{ fontSize: 12 }}>{item.unit}</Text>}
             valueStyle={{ fontSize: 20, fontWeight: 700, lineHeight: 1.2 }}
           />
-          <Text type="secondary" style={{ fontSize: 11 }}>
+          <Text type="secondary" style={{ fontSize: 11, marginLeft: "auto" }}>
             관측일: {current?.date || "데이터 없음"}
           </Text>
-          <div style={{ marginTop: 4, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Text style={{ color: deltaColor(qoq), fontWeight: 600, fontSize: 12 }}>
+          </div>
+          <div style={{ marginTop: 4, display: "flex", gap: 5, flexWrap: "wrap" }}>
+            <Text style={{ color: deltaColor(qoq), fontWeight: 600, fontSize: 12, marginRight: "auto" }}>
               QoQ {formatDelta(qoq)}
               {prevQ && (
-                <Text type="secondary" style={{ fontSize: 10, marginLeft: 4 }}>
+                <Text type="secondary" style={{ fontSize: 10, marginLeft: 2 }}>
                   ({formatValue(prevQ.value)})
                 </Text>
               )}
@@ -434,26 +531,341 @@ function IndicatorCard({ item, current, prevQ, prevY, weight, onWeightChange, en
             <Text style={{ color: deltaColor(yoy), fontWeight: 600, fontSize: 12 }}>
               YoY {formatDelta(yoy)}
               {prevY && (
-                <Text type="secondary" style={{ fontSize: 10, marginLeft: 4 }}>
+                <Text type="secondary" style={{ fontSize: 10, marginLeft: 2 }}>
                   ({formatValue(prevY.value)})
                 </Text>
               )}
             </Text>
             {item.note && (
               <Tooltip title={item.note}>
-                <InfoCircleOutlined style={{ color: "rgba(0,0,0,0.45)" }} />
+                <InfoCircleOutlined style={{ color: "rgba(0,0,0,0.45)", marginLeft: "auto" }} />
               </Tooltip>
             )}
           </div>
+
+      <div style={{ display: "flex", gap: 5 }}>
+        <div style={{ flex: 9 }}>
+          <WeightGauge value={weight} onChange={(v) => onWeightChange(item.name, v)} />
+        </div>
+        <div style={{ flex: 1, height: 20, marginTop: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {!noData && (
+            <Tooltip title={enabled ? "종합시그널 반영 ON — 끄려면 클릭" : "종합시그널 미반영 — 켜려면 클릭"}>
+              <Switch size="small" checked={enabled} onChange={(v) => onToggle(item.name, v)} />
+            </Tooltip>
+          )}
+        </div>
+      </div>
+
+          {/* ── 5년 차트 토글 버튼 ── */}
+          <div style={{ marginTop: 8 }}>
+            <button
+              onClick={handleChartToggle}
+              style={{
+                background: "none",
+                border: "1px solid #d9d9d9",
+                borderRadius: 4,
+                cursor: "pointer",
+                fontSize: 11,
+                color: chartOpen ? "#1677ff" : "rgba(0,0,0,0.45)",
+                padding: "2px 8px",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                transition: "color 0.2s, border-color 0.2s",
+              }}
+            >
+              <span style={{ fontSize: 12 }}>{chartOpen ? "▲" : "▼"}</span>
+              {chartOpen ? "차트 닫기" : "5년 추이"}
+            </button>
+          </div>
+
+          {/* ── 차트 영역 ── */}
+          {chartOpen && (
+            <div style={{ marginTop: 6 }}>
+              {chartLoading && (
+                <div style={{ textAlign: "center", padding: "8px 0" }}>
+                  <Spin size="small" />
+                  <Text type="secondary" style={{ fontSize: 11, marginLeft: 6 }}>로딩 중…</Text>
+                </div>
+              )}
+              {chartError && !chartLoading && (
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  ⚠ {chartError}
+                </Text>
+              )}
+              {chartData && !chartLoading && (
+                <IndicatorSparkline
+                  dates={chartData.dates}
+                  values={chartData.values}
+                  unit={item.unit}
+                  color={chartColor}
+                />
+              )}
+            </div>
+          )}
         </div>
       )}
-
-      <WeightGauge value={weight} onChange={(v) => onWeightChange(item.name, v)} />
       {!noData && !enabled && (
         <Text type="secondary" style={{ fontSize: 10, fontStyle: "italic" }}>
           토글 OFF — 종합시그널 미반영
         </Text>
       )}
+    </Card>
+  );
+}
+
+// ---------- OHLCV 캔들차트 상수 ----------
+const CHART_H = 320;
+const CHART_PAD = { left: 8, right: 68, top: 18, bottom: 30 };
+const CHART_VOL_H = 56;
+
+// ---------- OHLCV 캔들차트 컴포넌트 ----------
+function NdxChart({ selectedStock }) {
+  const canvasRef = useRef(null);
+  const containerRef = useRef(null);
+  const [chartSymbol, setChartSymbol] = useState("^NDX");
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [canvasW, setCanvasW] = useState(600);
+  const [offset, setOffset] = useState(0);
+  const barW = 8;
+  const [tooltip, setTooltip] = useState(null);
+  const [hoverIdx, setHoverIdx] = useState(null);
+
+  const symbolOptions = useMemo(() => {
+    const opts = [{ value: "^NDX", label: "나스닥 100 (NDX)" }];
+    if (selectedStock) {
+      opts.push({
+        value: selectedStock.ticker,
+        label: `${selectedStock.ticker}${selectedStock.name ? ` — ${selectedStock.name}` : ""}`,
+      });
+    }
+    return opts;
+  }, [selectedStock]);
+
+  // selectedStock 해제 시 NDX 로 복귀
+  useEffect(() => {
+    if (!selectedStock && chartSymbol !== "^NDX") setChartSymbol("^NDX");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStock]);
+
+  // 데이터 fetch
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true); setError(null); setData([]); setOffset(0);
+    axios.get("/invest/ohlcv/", { params: { symbol: chartSymbol, years: 8 }, timeout: 30000 })
+      .then(({ data: resp }) => {
+        if (cancelled) return;
+        setData(Array.isArray(resp) ? resp : (resp?.candles || []));
+      })
+      .catch((e) => { if (!cancelled) setError(e?.response?.data?.error || e?.message || "로드 실패"); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [chartSymbol]);
+
+  // 컨테이너 너비 감지
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    setCanvasW(el.offsetWidth || 600);
+    const obs = new ResizeObserver(([e]) => setCanvasW(e.contentRect.width || 600));
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  // 보이는 캔들 범위 계산
+  const visibleSlice = useMemo(() => {
+    if (!data.length) return null;
+    const chartW = canvasW - CHART_PAD.left - CHART_PAD.right;
+    const count = Math.max(10, Math.floor(chartW / barW));
+    const safeOffset = Math.min(offset, Math.max(0, data.length - 20));
+    const start = Math.max(0, data.length - count - safeOffset);
+    const end = Math.max(start + 1, data.length - safeOffset);
+    return { visible: data.slice(start, end), start, end };
+  }, [data, canvasW, offset]);
+
+  // 캔버스 그리기
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !visibleSlice) return;
+    const { visible } = visibleSlice;
+    if (!visible.length) return;
+    const W = canvasW, H = CHART_H;
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d");
+    const { left: PL, right: PR, top: PT, bottom: PB } = CHART_PAD;
+    const priceH = H - PT - PB - CHART_VOL_H - 4;
+
+    const maxP = Math.max(...visible.map(d => d.high));
+    const minP = Math.min(...visible.map(d => d.low));
+    const pRange = maxP - minP || 1;
+    const toY = v => PT + (1 - (v - minP) / pRange) * priceH;
+    const toX = i => PL + (i + 0.5) * barW;
+    const volY0 = H - PB;
+    const maxVol = Math.max(...visible.map(d => d.volume || 0)) || 1;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
+
+    // 가격 그리드
+    for (let g = 0; g <= 4; g++) {
+      const y = PT + (g / 4) * priceH;
+      const p = maxP - (g / 4) * pRange;
+      ctx.strokeStyle = "#f0f0f0"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(PL, y); ctx.lineTo(W - PR, y); ctx.stroke();
+      ctx.fillStyle = "rgba(0,0,0,0.38)"; ctx.font = "10px sans-serif"; ctx.textAlign = "left";
+      ctx.fillText(p >= 1000 ? p.toFixed(0) : p.toFixed(2), W - PR + 3, y + 4);
+    }
+    // 거래량 구분선
+    ctx.strokeStyle = "#ebebeb"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(PL, H - PB - CHART_VOL_H); ctx.lineTo(W - PR, H - PB - CHART_VOL_H); ctx.stroke();
+
+    // 캔들 + 거래량
+    visible.forEach((d, i) => {
+      const x = toX(i);
+      const isUp = d.close >= d.open;
+      const color = isUp ? "#52c41a" : "#ff4d4f";
+      const hw = Math.max(1, barW / 2 - 0.5);
+      // 심지
+      ctx.strokeStyle = isUp ? "#389e0d" : "#cf1322"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, toY(d.high)); ctx.lineTo(x, toY(d.low)); ctx.stroke();
+      // 몸통
+      const bt = Math.min(toY(d.open), toY(d.close));
+      const bh = Math.max(1, Math.abs(toY(d.open) - toY(d.close)));
+      ctx.fillStyle = color; ctx.fillRect(x - hw, bt, hw * 2, bh);
+      // 거래량
+      const vh = Math.max(1, ((d.volume || 0) / maxVol) * CHART_VOL_H);
+      ctx.fillStyle = isUp ? "rgba(82,196,26,0.35)" : "rgba(255,77,79,0.35)";
+      ctx.fillRect(x - hw, volY0 - vh, hw * 2, vh);
+    });
+
+    // 시간 축 레이블
+    const every = Math.max(1, Math.round(80 / barW));
+    ctx.fillStyle = "rgba(0,0,0,0.38)"; ctx.font = "10px sans-serif"; ctx.textAlign = "center";
+    visible.forEach((d, i) => {
+      if (i % every === 0 && d.date) ctx.fillText(d.date.slice(0, 7), toX(i), H - PB + 14);
+    });
+
+    // 호버 십자선 + 종가 레이블
+    if (hoverIdx !== null && hoverIdx < visible.length) {
+      const x = toX(hoverIdx);
+      ctx.strokeStyle = "rgba(0,0,0,0.18)"; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.moveTo(x, PT); ctx.lineTo(x, H - PB); ctx.stroke();
+      ctx.setLineDash([]);
+      const d = visible[hoverIdx];
+      const cy = toY(d.close);
+      ctx.fillStyle = "rgba(22,119,255,0.85)"; ctx.fillRect(W - PR, cy - 7, PR - 2, 14);
+      ctx.fillStyle = "#fff"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "left";
+      ctx.fillText(d.close >= 1000 ? d.close.toFixed(0) : d.close.toFixed(2), W - PR + 3, cy + 4);
+    }
+  }, [visibleSlice, canvasW, hoverIdx]);
+
+  // 스크롤 → 좌우 패닝
+  const handleWheel = useCallback((e) => {
+    e.preventDefault();
+    const step = (e.deltaY > 0 || e.deltaX > 0) ? -5 : 5;
+    setOffset(prev => Math.max(0, Math.min(Math.max(0, (data.length || 30) - 20), prev + step)));
+  }, [data.length]);
+
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    c.addEventListener("wheel", handleWheel, { passive: false });
+    return () => c.removeEventListener("wheel", handleWheel);
+  }, [handleWheel]);
+
+  // 마우스 이동 → 툴팁
+  const handleMouseMove = useCallback((e) => {
+    if (!visibleSlice || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const idx = Math.floor((x - CHART_PAD.left) / barW);
+    const { visible } = visibleSlice;
+    if (idx >= 0 && idx < visible.length) {
+      setHoverIdx(idx);
+      const d = visible[idx];
+      setTooltip({ ...d, cx: e.clientX, cy: e.clientY });
+    } else {
+      setHoverIdx(null); setTooltip(null);
+    }
+  }, [visibleSlice]);
+
+  const handleMouseLeave = useCallback(() => { setHoverIdx(null); setTooltip(null); }, []);
+
+  return (
+    <Card
+      size="small"
+      style={{ flex: 1 }}
+      styles={{ body: { padding: "8px 12px" } }}
+      title={
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontWeight: 600 }}>차트</span>
+          <Select
+            size="small"
+            value={chartSymbol}
+            onChange={v => { setChartSymbol(v); setOffset(0); }}
+            style={{ minWidth: 200 }}
+            options={symbolOptions}
+          />
+          <Text type="secondary" style={{ fontSize: 10 }}>
+            스크롤 ← → 이동 · 최대 8년
+          </Text>
+        </div>
+      }
+    >
+      <div ref={containerRef} style={{ width: "100%", position: "relative" }}>
+        {loading && (
+          <div style={{ height: CHART_H, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <Spin size="small" />
+            <Text type="secondary" style={{ fontSize: 11 }}>차트 로딩 중…</Text>
+          </div>
+        )}
+        {!loading && error && (
+          <div style={{ height: CHART_H, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>⚠ {error}</Text>
+          </div>
+        )}
+        {!loading && !error && data.length === 0 && (
+          <div style={{ height: CHART_H, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Text type="secondary">데이터 없음</Text>
+          </div>
+        )}
+        {!loading && !error && data.length > 0 && (
+          <canvas
+            ref={canvasRef}
+            style={{ display: "block", cursor: "crosshair", maxWidth: "100%" }}
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
+          />
+        )}
+        {tooltip && (
+          <div style={{
+            position: "fixed",
+            left: tooltip.cx + 14,
+            top: tooltip.cy - 130,
+            background: "rgba(15,15,15,0.88)",
+            color: "#fff",
+            padding: "7px 11px",
+            borderRadius: 5,
+            fontSize: 11,
+            lineHeight: 1.75,
+            pointerEvents: "none",
+            zIndex: 9999,
+            whiteSpace: "nowrap",
+            boxShadow: "0 2px 10px rgba(0,0,0,0.35)",
+          }}>
+            <div style={{ fontWeight: 700, marginBottom: 2, color: "#e0e0e0" }}>{tooltip.date}</div>
+            <div>시가 <span style={{ fontWeight: 600 }}>{tooltip.open?.toFixed(2)}</span></div>
+            <div>고가 <span style={{ fontWeight: 600, color: "#73d13d" }}>{tooltip.high?.toFixed(2)}</span></div>
+            <div>저가 <span style={{ fontWeight: 600, color: "#ff7875" }}>{tooltip.low?.toFixed(2)}</span></div>
+            <div>종가 <span style={{ fontWeight: 600, color: (tooltip.close ?? 0) >= (tooltip.open ?? 0) ? "#73d13d" : "#ff7875" }}>
+              {tooltip.close?.toFixed(2)}
+            </span></div>
+            <div>거래량 <span style={{ fontWeight: 600 }}>{tooltip.volume?.toLocaleString()}</span></div>
+          </div>
+        )}
+      </div>
     </Card>
   );
 }
@@ -498,6 +910,12 @@ export default function InvestIndicator() {
   const [ndxList, setNdxList] = useState(NDX100_FALLBACK);
   const [ndxSource, setNdxSource] = useState("fallback"); // 'backend' | 'fallback'
   const [selectedStock, setSelectedStock] = useState(null);
+
+  // 섹터별 공식 선택 (sector 이름 → formula id)
+  const [sectorFormulaIds, setSectorFormulaIds] = useState({});
+  const setSectorFormulaId = useCallback((sector, id) => {
+    setSectorFormulaIds(prev => ({ ...prev, [sector]: id }));
+  }, []);
 
   // 개별 종목 지표 (MA / 거래강도 / P/C / 고저)
   const [stockData, setStockData] = useState(null);
@@ -940,6 +1358,45 @@ export default function InvestIndicator() {
       .sort((a, b) => b.weight - a.weight || b.count - a.count);
   }, [ndxList, summary]);
 
+  // 섹터별 공식 적용 결과 (현재는 매크로 지표 기반 동일 데이터, 추후 종목별 지표 도입 시 차별화)
+  const sectorFormulaResults = useMemo(() => {
+    const out = {};
+    sectorBreakdown.forEach(s => {
+      const fid = sectorFormulaIds[s.sector] || DEFAULT_FORMULA.id;
+      const formula = fid === DEFAULT_FORMULA.id
+        ? DEFAULT_FORMULA
+        : (userFormulas.find(f => f.id === fid) || DEFAULT_FORMULA);
+      // 시그널 맵 (매크로 전용)
+      const signals = {};
+      SECTIONS.forEach(sec => sec.items.forEach(it => {
+        if (!it.seriesId) return;
+        const r = results[it.seriesId];
+        if (!r?.current || !r?.prevQ) return;
+        signals[it.name] = computeSignal(it, r.current, r.prevQ);
+      }));
+      const wMap = {};
+      Object.keys(weights).forEach(k => { if (itemEnabled[k] !== false) wMap[k] = weights[k]; });
+      try {
+        validateCompiled(formula.compiled_text);
+        const evalFn = makeEvaluator(formula.compiled_text);
+        const v = evalFn({
+          bullW: macroSummary.bullW, bearW: macroSummary.bearW,
+          neutW: macroSummary.neutW, totalW: macroSummary.totalW,
+          count: macroSummary.count, score: macroSummary.score,
+          weights: wMap, signals,
+        });
+        const score = Number.isFinite(v) ? v : macroSummary.score;
+        let color = "default";
+        if (score > 20) color = "green";
+        else if (score < -20) color = "red";
+        out[s.sector] = { score, color };
+      } catch {
+        out[s.sector] = { score: macroSummary.score, color: macroSummary.color };
+      }
+    });
+    return out;
+  }, [sectorBreakdown, sectorFormulaIds, macroSummary, results, weights, itemEnabled, userFormulas]);
+
   return (
     <div style={{ padding: 16 }}>
       {/* ===== 헤더: 1줄(타이틀 좌측 / 셀렉터 우측) + 2줄(메타 3등분) ===== */}
@@ -1135,58 +1592,8 @@ export default function InvestIndicator() {
             </Col>
           </Row>
 
-          {/* 아래: 섹터별 시그널 (다중 줄 wrap, 풀 라벨) */}
-          <Card
-            size="small"
-            style={{ flex: 1 }}
-            styles={{ body: { padding: 12 } }}
-            title={
-              <span style={{ fontWeight: 600 }}>
-                섹터별 시그널{" "}
-                <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>
-                  (NDX 100 구성종목 기반 · {sectorBreakdown.length}개)
-                </Text>
-              </span>
-            }
-          >
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {sectorBreakdown.map((s) => (
-                <div
-                  key={s.sector}
-                  style={{
-                    flex: "1 1 calc(20% - 8px)",
-                    minWidth: 130,
-                    maxWidth: 220,
-                    padding: "8px 10px",
-                    border: "1px solid #f0f0f0",
-                    borderLeft: `3px solid ${
-                      s.color === "green" ? "#52c41a"
-                      : s.color === "red" ? "#ff4d4f" : "#faad14"
-                    }`,
-                    borderRadius: 4,
-                    background: "#fafafa",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
-                    <Tooltip title={s.sector}>
-                      <Tag
-                        color={SECTOR_COLOR[s.sector] || "default"}
-                        style={{ marginRight: 0, fontSize: 10, cursor: "default" }}
-                      >
-                        {SECTOR_ABBR[s.sector] || "ETC"}
-                      </Tag>
-                    </Tooltip>
-                    <Tag color={s.color} style={{ marginRight: 0, fontSize: 11, fontWeight: 600 }}>
-                      {s.score >= 0 ? "+" : ""}{s.score.toFixed(0)}
-                    </Tag>
-                  </div>
-                  <Text type="secondary" style={{ fontSize: 10 }}>
-                    {s.count}종목 · 비중 {s.weight.toFixed(1)}%
-                  </Text>
-                </div>
-              ))}
-            </div>
-          </Card>
+          {/* 아래: OHLCV 캔들차트 (나스닥 100 / 선택 종목) */}
+          <NdxChart selectedStock={selectedStock} />
         </Col>
 
         {/* === 우측 1/3: 공식 + 인라인 가중치 === */}
@@ -1311,7 +1718,7 @@ export default function InvestIndicator() {
             </div>
 
             {/* 컴팩트 인라인 가중치 — 카테고리당 1줄 */}
-            <Text strong style={{ fontSize: 11, display: "block", marginBottom: 4 }}>
+            <Text strong style={{ fontSize: 12, display: "block", marginBottom: 4 }}>
               지표별 가중치 wᵢ
             </Text>
             {SECTIONS.map((section) => {
@@ -1327,7 +1734,7 @@ export default function InvestIndicator() {
                     marginBottom: 3,
                   }}
                 >
-                  <Text type="secondary" style={{ fontSize: 10, minWidth: 38, fontWeight: 600 }}>
+                  <Text type="secondary" style={{ fontSize: 11, minWidth: 38, fontWeight: 600 }}>
                     {sectionShort}
                   </Text>
                   {section.items.map((item) => {
@@ -1357,7 +1764,7 @@ export default function InvestIndicator() {
                           <WeightInput
                             value={weights[item.name] ?? 50}
                             onChange={(v) => setWeight(item.name, v)}
-                            style={{ width: 46 }}
+                            style={{ width: 35 }}
                           />
                         </span>
                       </Tooltip>
@@ -1383,7 +1790,7 @@ export default function InvestIndicator() {
                   <Tooltip title={`${selectedStock.ticker} 개별 종목 지표`}>
                     <Text
                       type="secondary"
-                      style={{ fontSize: 10, minWidth: 38, fontWeight: 600, color: "#1677ff" }}
+                      style={{ fontSize: 11, minWidth: 38, fontWeight: 600, color: "#1677ff" }}
                     >
                       종목
                     </Text>
@@ -1428,7 +1835,7 @@ export default function InvestIndicator() {
                           <WeightInput
                             value={stockWeights[it.name] ?? 50}
                             onChange={(v) => setStockWeight(it.name, v)}
-                            style={{ width: 46 }}
+                            style={{ width: 35 }}
                           />
                         </span>
                       </Tooltip>
@@ -1456,6 +1863,74 @@ export default function InvestIndicator() {
         />
       )}
 
+      {/* ===== 섹터별 시그널 — 1줄 수평 나열 ===== */}
+      {sectorBreakdown.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ marginBottom: 6 }}>
+            <Text strong style={{ fontSize: 13 }}>섹터별 시그널 </Text>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              (NDX 100 구성종목 기반 · {sectorBreakdown.length}개) · 각 섹터별 공식 선택 가능
+            </Text>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              overflowX: "auto",
+              flexWrap: "nowrap",
+              paddingBottom: 6,
+              paddingTop: 2,
+            }}
+          >
+            {sectorBreakdown.map((s) => {
+              const fr = sectorFormulaResults[s.sector] || { score: s.score, color: s.color };
+              const fid = sectorFormulaIds[s.sector] || DEFAULT_FORMULA.id;
+              const borderTopColor =
+                fr.color === "green" ? "#52c41a"
+                : fr.color === "red" ? "#ff4d4f" : "#faad14";
+              return (
+                <div
+                  key={s.sector}
+                  style={{
+                    flexShrink: 0,
+                    minWidth: 118,
+                    padding: "6px 8px",
+                    border: `1px solid ${fr.color === "green" ? "#b7eb8f" : fr.color === "red" ? "#ffa39e" : "#d9d9d9"}`,
+                    borderTop: `3px solid ${borderTopColor}`,
+                    borderRadius: 4,
+                    background: "#fafafa",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4, marginBottom: 5 }}>
+                    <Tooltip title={`${s.sector} (${s.count}종목)`}>
+                      <Tag
+                        color={SECTOR_COLOR[s.sector] || "default"}
+                        style={{ marginRight: 0, fontSize: 10, cursor: "default" }}
+                      >
+                        {SECTOR_ABBR[s.sector] || "ETC"}
+                      </Tag>
+                    </Tooltip>
+                    <Tag color={fr.color} style={{ marginRight: 0, fontSize: 11, fontWeight: 700 }}>
+                      {fr.score >= 0 ? "+" : ""}{fr.score.toFixed(0)}
+                    </Tag>
+                  </div>
+                  <Select
+                    size="small"
+                    value={fid}
+                    onChange={v => setSectorFormulaId(s.sector, v)}
+                    style={{ width: "100%", fontSize: 10 }}
+                    options={[
+                      { value: DEFAULT_FORMULA.id, label: DEFAULT_FORMULA.name },
+                      ...userFormulas.map(f => ({ value: f.id, label: f.name })),
+                    ]}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {SECTIONS.map((section) => (
         <Card
           key={section.title}
@@ -1469,7 +1944,7 @@ export default function InvestIndicator() {
               return (
                 <Col xs={24} sm={12} md={8} lg={6} key={item.name}>
                   <IndicatorCard
-                    item={item}                     current={r?.current ?? null}
+                    item={item}                      current={r?.current ?? null}
                     prevQ={r?.prevQ ?? null}
                     prevY={r?.prevY ?? null}
                     weight={weights[item.name] ?? 50}
