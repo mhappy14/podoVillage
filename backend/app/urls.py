@@ -20,6 +20,7 @@ from .views import (
 # 투자지표 관련 뷰 import
 from app.views_invest import (
     stock_history,
+    ohlcv,
     fred_series,
     fear_greed_index,
     bitcoin_price,
@@ -68,6 +69,7 @@ urlpatterns = router.urls + [
     path('invest/bitcoin/',            bitcoin_price,    name='invest-bitcoin'),
     path('invest/market-signals/',     market_signals,   name='invest-market-signals'),
     path('invest/ndx100/',             ndx100_list,      name='invest-ndx100'),
+    path('invest/ohlcv/',               ohlcv,              name='invest-ohlcv'),
     path('invest/indicator-snapshots/', indicator_snapshots, name='invest-indicator-snapshots'),
     path('invest/indicator-history/',   indicator_history,  name='invest-indicator-history'),
     path('invest/stock-indicators/<str:symbol>/', stock_indicators, name='invest-stock-indicators'),

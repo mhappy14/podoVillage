@@ -246,7 +246,7 @@ const StudyView = () => {
     navigate(`/study/view/${last.id}`);
   };
 
-  const examLabel = useMemo(() => renderExamLabel(examnumber?.exam), [examnumber]);
+  const examLabel = useMemo(() => renderExamLabel(examObj ?? examnumber?.exam), [examObj, examnumber]);
 
   if (loading) {
     return <div style={{ textAlign: "center", padding: 60 }}><Spin tip="로딩 중..." /></div>;
@@ -263,12 +263,12 @@ const StudyView = () => {
   }
 
   return (
-    <div style={{ padding: "1rem 1.25rem" }}>
+    <div style={{ padding: "0" }}>
       {/* ===== 회차 네비게이션 바 ===== */}
       <Card
         size="small"
-        style={{ marginBottom: 16 }}
-        styles={{ body: { padding: "10px 14px" } }}
+        style={{ marginBottom: "0.25rem" }}
+        styles={{ body: { padding: "0.25rem" } }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
           {/* 좌측: 다음 회차로 (사용자 요청 — 차기회차=왼쪽) */}
@@ -294,19 +294,19 @@ const StudyView = () => {
           </div>
 
           {/* 가운데: 시험명 + 회차/연도 + Study로 돌아가기 */}
-          <div style={{ flex: 1, textAlign: "center", minWidth: 0 }}>
-            <div style={{ fontSize: 11, color: "#9ca3af", letterSpacing: 1 }}>
+          <div style={{ display:"flex", flex: 1, justifyContent: "center", alignItems: "center", minWidth: 0 }}>
+            <Text style={{ flex: 1, textAlign: "center" }} type="secondary">
+              {examLabel}
+            </Text>
+            <Text style={{ flex: 1, textAlign: "center" }} type="secondary">
+              {examnumber.year}년 {examnumber.examnumber}회
+            </Text>
+            <div style={{ flex: 2, textAlign: "center", fontSize: 11, color: "#9ca3af", letterSpacing: 1 }}>
               <Link to="/study" style={{ color: "#1677ff" }}>
                 <BookOutlined /> 시험 목록
               </Link>{" "}
-              · {sameExamSiblings.length}개 회차 등록됨
+              ({sameExamSiblings.length}개 회차 등록됨)
             </div>
-            <Title level={3} style={{ margin: "2px 0 0 0" }}>
-              {examLabel}
-            </Title>
-            <Text type="secondary">
-              {examnumber.year}년 {examnumber.examnumber}회
-            </Text>
           </div>
 
           {/* 우측: 이전 회차로 (사용자 요청 — 이전회차=오른쪽) */}

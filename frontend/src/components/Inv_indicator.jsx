@@ -1863,25 +1863,59 @@ export default function InvestIndicator() {
         />
       )}
 
-      {/* ===== 섹터별 시그널 — 1줄 수평 나열 ===== */}
+      {/* ===== 섹터별 시그널 — 3줄 그리드 ===== */}
       {sectorBreakdown.length > 0 && (
         <div style={{ marginBottom: 12 }}>
           <div style={{ marginBottom: 6 }}>
             <Text strong style={{ fontSize: 13 }}>섹터별 시그널 </Text>
-            <Text type="secondary" style={{ fontSize: 11 }}>
-              (NDX 100 구성종목 기반 · {sectorBreakdown.length}개) · 각 섹터별 공식 선택 가능
-            </Text>
           </div>
           <div
             style={{
-              display: "flex",
+              display: "grid",
+              gridTemplateColumns: `repeat(${Math.ceil((sectorBreakdown.length + 1) / 2)}, 1fr)`,
               gap: 6,
-              overflowX: "auto",
-              flexWrap: "nowrap",
-              paddingBottom: 6,
-              paddingTop: 2,
             }}
           >
+            {/* ── 전체 시장 카드 (맨 앞) ── */}
+            {(() => {
+              const borderTopColor =
+                marketFormulaResult.color === "green" ? "#52c41a"
+                : marketFormulaResult.color === "red" ? "#ff4d4f" : "#faad14";
+              return (
+                <div
+                  key="__market__"
+                  style={{
+                    padding: "6px 8px",
+                    border: `1px solid ${marketFormulaResult.color === "green" ? "#b7eb8f" : marketFormulaResult.color === "red" ? "#ffa39e" : "#d9d9d9"}`,
+                    borderTop: `3px solid ${borderTopColor}`,
+                    borderRadius: 4,
+                    background: "#f0f5ff",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4, marginBottom: 5 }}>
+                    <Tooltip title={`전체 시장 (매크로 지표 기반)`}>
+                      <Tag color="geekblue" style={{ marginRight: 0, fontSize: 10, cursor: "default" }}>
+                        ALL
+                      </Tag>
+                    </Tooltip>
+                    <Tag color={marketFormulaResult.color} style={{ marginRight: 0, fontSize: 11, fontWeight: 700 }}>
+                      {marketFormulaResult.score >= 0 ? "+" : ""}{marketFormulaResult.score.toFixed(0)}
+                    </Tag>
+                  </div>
+                  <Select
+                    size="small"
+                    value={marketFormulaId}
+                    onChange={v => setMarketFormulaId(v)}
+                    style={{ width: "100%", fontSize: 10 }}
+                    options={[
+                      { value: DEFAULT_FORMULA.id, label: DEFAULT_FORMULA.name },
+                      ...userFormulas.map(f => ({ value: f.id, label: f.name })),
+                    ]}
+                  />
+                </div>
+              );
+            })()}
+
             {sectorBreakdown.map((s) => {
               const fr = sectorFormulaResults[s.sector] || { score: s.score, color: s.color };
               const fid = sectorFormulaIds[s.sector] || DEFAULT_FORMULA.id;
@@ -1892,8 +1926,6 @@ export default function InvestIndicator() {
                 <div
                   key={s.sector}
                   style={{
-                    flexShrink: 0,
-                    minWidth: 118,
                     padding: "6px 8px",
                     border: `1px solid ${fr.color === "green" ? "#b7eb8f" : fr.color === "red" ? "#ffa39e" : "#d9d9d9"}`,
                     borderTop: `3px solid ${borderTopColor}`,

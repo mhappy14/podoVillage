@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Typography, Tabs, Space, Spin, Alert, message } from 'antd';
 import AxiosInstance from './AxiosInstance';
 import WikiForm from './WikiForm';
+import WikiGuide from './WikiGuide';
 import DOMPurify from 'dompurify';
 import parseWikiSyntax from './WikiParser';
 
@@ -134,9 +135,14 @@ export default function WikiEdit() {
             label: '미리보기',
             children: (
               <Space direction="vertical" style={{ width: '100%' }}>
-                <div className="wiki-preview" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                <div className="wiki-body wiki-preview" dangerouslySetInnerHTML={{ __html: previewHtml }} />
               </Space>
             ),
+          },
+          {
+            key: 'guide',
+            label: '문법 도움말',
+            children: <WikiGuide />,
           },
         ]}
       />

@@ -12,28 +12,35 @@ export default function parseWikiSyntax(input) {
   if (mRedirect) {
     const target = mRedirect[1].trim();
     const href = `/wiki/v/${encodeURIComponent(target)}`;
-    return `<div class="redirect" style="padding:12px;border:1px solid #e5e7eb;background:#f9fafb;border-radius:12px">이 문서는 <a href="${href}">${escapeHtml(target)}</a>(으)로 넘겨집니다.</div>`;
+    return `<div class="nm-redirect">이 문서는 <a href="${href}">${escapeHtml(target)}</a>(으)로 넘겨집니다.</div>`;
   }
 
   // ---- [목차] 자리표시자 ----
-  const TOC_TOKEN = `__TOC__${Math.random().toString(36).slice(2)}__`;
+  const TOC_TOKEN = `TOC${Math.random().toString(36).slice(2)}`;
   text = text.replace(/\[\uBAA9\uCC28\]/g, TOC_TOKEN);
 
   // ---- 이스케이프 1차 보호 ----
+  // NOTE: 토큰에 밑줄(_)을 쓰면 인라인 밑줄 문법(__...__)에 먹히므로 영숫자 토큰을 사용한다.
   const ESC = new Map(); let escId = 0;
+  const ESC_TAG = `ESC${Math.random().toString(36).slice(2)}`;
   text = text.replace(/\\([\\\[\]\{\}\|#`*_\-~=<>:()!^,])/g, (_, ch) => {
-    const key = `__ESC_${escId++}__`; ESC.set(key, ch); return key;
+    const key = `${ESC_TAG}${escId++}E`; ESC.set(key, ch); return key;
   });
 
   // ---- 리터럴 보호 {{{[[...]]}}} ----
   const LIT = new Map(); let litId = 0;
+  const LIT_TAG = `LIT${Math.random().toString(36).slice(2)}`;
   text = text.replace(/\{\{\{\s*\[\[(.*?)\]\]\s*\}\}\}/gs, (_, inner) => {
-    const key = `__LIT_${litId++}__`; LIT.set(key, escapeHtml(inner)); return key;
+    const key = `${LIT_TAG}${litId++}L`; LIT.set(key, escapeHtml(inner)); return key;
   });
+
+  // ---- 코드블록 보호 {{{ ... }}} ----
+  const CODE = new Map(); let codeId = 0;
+  const CODE_TAG = `CODE${Math.random().toString(36).slice(2)}`;
 
   // ---- 블록 수준 ----
   text = parseFolding(text);
-  text = parseCodeBlocks(text);
+  text = parseCodeBlocks(text, CODE, CODE_TAG, () => `${CODE_TAG}${codeId++}C`);
   const secCtx = renderNumberedSections(text); // 번호/접기/앵커 생성
   text = secCtx.html;
   text = parseTables(text);
@@ -53,6 +60,9 @@ export default function parseWikiSyntax(input) {
   // ---- 이스케이프 복원 ----
   for (const [k,v] of LIT) text = text.replaceAll(k, `<code>${v}</code>`);
   for (const [k,v] of ESC) text = text.replaceAll(k, escapeHtml(v));
+
+  // ---- 코드블록 복원 ----
+  for (const [k,v] of CODE) text = text.replaceAll(k, v);
 
   // ---- 목차 주입 ----
   if (text.includes(TOC_TOKEN)) {
@@ -193,10 +203,10 @@ function buildTOCNumbered(heads){
     stack.push(node);
   });
   const render = nodes => !nodes?.length ? '' :
-    `<ul style="list-style:none;padding-left:1rem;margin:0.25rem 0">${nodes.map(n =>
-      `<li style="margin:2px 0">${n.html}${render(n.children)}</li>`
+    `<ul>${nodes.map(n =>
+      `<li>${n.html}${render(n.children)}</li>`
     ).join('')}</ul>`;
-  return `<nav class="toc" id="toc" style="border:1px solid #e5e7eb;background:#f8fafc;border-radius:12px;padding:12px;margin:12px 0"><div style="font-weight:600;margin-bottom:6px">목차</div>${render(root.children)}</nav>`;
+  return `<nav class="nm-toc" id="toc"><div class="nm-toc-title">목차</div>${render(root.children)}</nav>`;
 }
 
 
@@ -216,9 +226,12 @@ function parseFolding(text){
 }
 
 // ---- 코드블록 ----
-function parseCodeBlocks(text){
+function parseCodeBlocks(text, store, tag, makeKey){
   return text.replace(/\{\{\{\s*(?:#!([\w\-]+))?\n([\s\S]*?)\n\}\}\}/g,(_,lang,body)=>{
-    const cls = lang?` class="language-${lang}"`:''; return `<pre><code${cls}>${escapeHtml(body)}</code></pre>`;
+    const cls = lang?` class="language-${lang}"`:'';
+    const html = `<pre><code${cls}>${escapeHtml(body)}</code></pre>`;
+    if (store && makeKey){ const key = makeKey(); store.set(key, html); return key; }
+    return html;
   });
 }
 
@@ -258,11 +271,11 @@ function renderTable(rows){
         if(/^tablewidth\s*=/.test(tok)){tOpt.width=tok.split('=')[1]; continue;}
         if(/^tablealign\s*=/.test(tok)){tOpt.align=tok.split('=')[1]; continue;}
         if(/^tablebordercolor\s*=/.test(tok)){tOpt.borderColor=tok.split('=')[1]; continue;}
-        if(/^<-\d+>$/.test(tok)){cell.colspan=parseInt(tok.match(/<-(\d+)>/)[1]); continue;}
-        if(/^<\|\d+>$/.test(tok)){cell.rowspan=parseInt(tok.match(/<\|(\d+)>/)[1]); continue;}
-        if(/^<\(>$/.test(tok)){cell.styles['text-align']='left'; continue;}
-        if(/^<:>$/.test(tok)){cell.styles['text-align']='center'; continue;}
-        if(/^<\)>$/.test(tok)){cell.styles['text-align']='right'; continue;}
+        if(/^-\d+$/.test(tok)){cell.colspan=parseInt(tok.slice(1),10); continue;}
+        if(/^\|\d+$/.test(tok)){cell.rowspan=parseInt(tok.slice(1),10); continue;}
+        if(/^\($/.test(tok)){cell.styles['text-align']='left'; continue;}
+        if(/^:$/.test(tok)){cell.styles['text-align']='center'; continue;}
+        if(/^\)$/.test(tok)){cell.styles['text-align']='right'; continue;}
         if(/^width\s*=/.test(tok)){cell.styles.width=tok.split('=')[1]; continue;}
         if(/^height\s*=/.test(tok)){cell.styles.height=tok.split('=')[1]; continue;}
         if(/^bgcolor\s*=/.test(tok)){cell.styles['background-color']=tok.split('=')[1]; continue;}
@@ -274,10 +287,10 @@ function renderTable(rows){
     const td=cells.map(c=>{const attrs=[]; if(c.colspan>1) attrs.push(`colspan="${c.colspan}"`); if(c.rowspan>1) attrs.push(`rowspan="${c.rowspan}"`); const st=Object.keys(c.styles).length?` style="${Object.entries(c.styles).map(([k,v])=>`${k}:${escAttr(String(v))}`).join(';')}"`:''; return `<td ${attrs.join(' ')}${st}>${c.html}</td>`;}).join('');
     return `<tr>${td}</tr>`;
   }).join('');
-  const tStyles={'margin':'1rem 0','border-collapse':'collapse'}; if(tOpt.width) tStyles.width=tOpt.width; if(tOpt.align==='center') tStyles.margin='1rem auto'; if(tOpt.align==='right') tStyles.margin='1rem 0 1rem auto';
+  const tStyles={}; if(tOpt.width) tStyles.width=tOpt.width; if(tOpt.align==='center'){tStyles['margin-left']='auto';tStyles['margin-right']='auto';} if(tOpt.align==='right'){tStyles['margin-left']='auto';} if(tOpt.borderColor) tStyles['border-color']=tOpt.borderColor;
   const tStyle=Object.entries(tStyles).map(([k,v])=>`${k}:${escAttr(String(v))}`).join(';');
-  const border=tOpt.borderColor?` style="border:1px solid ${escAttr(tOpt.borderColor)};${tStyle}"`:` style="${tStyle}"`;
-  return `<table border="1"${border}>${trHtml}</table>`;
+  const styleAttr=tStyle?` style="${tStyle}"`:'';
+  return `<table class="nm-table"${styleAttr}>${trHtml}</table>`;
 }
 
 // ---- 리스트 ----
@@ -289,13 +302,13 @@ function parseLists(text){
 function renderList(lines){ const root={level:0,children:[]}; const stack=[root];
   lines.forEach(line=>{ const m=line.match(/^(\s*)([*]|\d+\.|[aAiI]\.)\s+(.*)$/); if(!m) return; const level=Math.floor(m[1].length/1)+1; while(stack.length>1 && stack[stack.length-1].level>=level) stack.pop(); const node={level,ordered:/^(\d+\.|[aAiI]\.)$/.test(m[2]),children:[],html:parseInline(m[3])}; (stack[stack.length-1].children||=[]).push(node); stack.push(node); });
   const render=nodes=>!nodes?.length?'':{true:'ol',false:'ul'}[nodes[0].ordered]+'';
-  const walk=nodes=>!nodes?.length?'':`<${nodes[0].ordered?'ol':'ul'} style="margin:0.25rem 0 0.25rem 1.25rem">${nodes.map(n=>`<li>${n.html}${walk(n.children)}</li>`).join('')}</${nodes[0].ordered?'ol':'ul'}>`;
+  const walk=nodes=>!nodes?.length?'':`<${nodes[0].ordered?'ol':'ul'}>${nodes.map(n=>`<li>${n.html}${walk(n.children)}</li>`).join('')}</${nodes[0].ordered?'ol':'ul'}>`;
   return walk(root.children||[]);
 }
 
 // ---- 인용/수평선 ----
 function parseBlockquotes(text){
-  const lines=text.split('\n'); const out=[]; let i=0; while(i<lines.length){ if(/^\s*>/.test(lines[i])){ const chunk=[]; while(i<lines.length && /^\s*>/.test(lines[i])){ chunk.push(lines[i].replace(/^\s*>\s?/,'')); i++; } out.push(`<blockquote style="border-left:3px solid #e5e7eb;margin:8px 0;padding:6px 10px">${parseInline(chunk.join('\n'))}</blockquote>`); continue;} out.push(lines[i++]); } return out.join('\n');
+  const lines=text.split('\n'); const out=[]; let i=0; while(i<lines.length){ if(/^\s*>/.test(lines[i])){ const chunk=[]; while(i<lines.length && /^\s*>/.test(lines[i])){ chunk.push(lines[i].replace(/^\s*>\s?/,'')); i++; } out.push(`<blockquote class="nm-quote">${parseInline(chunk.join('\n'))}</blockquote>`); continue;} out.push(lines[i++]); } return out.join('\n');
 }
 function parseHr(text){ return text.replace(/\n[-]{4,9}\n/g,'\n<hr>\n'); }
 

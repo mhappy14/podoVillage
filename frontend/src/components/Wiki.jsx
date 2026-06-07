@@ -93,7 +93,17 @@ export default function Wiki() {
 
           <List
             bordered
-            dataSource={items}
+            header={
+              <List.Item
+                style={{ padding: '8px 16px' }}
+                actions={[<Tag key="pinned" color="blue">고정 문서</Tag>]}
+              >
+                <List.Item.Meta
+                  title={<Link to="/wiki/v/%EB%AC%B8%EB%B2%95">📌 문법</Link>}
+                />
+              </List.Item>
+            }
+            dataSource={items.filter(it => it?.title !== '문법')}
             locale={{ emptyText: '최근 문서가 없습니다.' }}
             renderItem={(it) => {
               const title = it?.title ?? '(제목 없음)';

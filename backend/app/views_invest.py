@@ -46,6 +46,58 @@ def stock_history(request, symbol):
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
+@cache_page(60 * 60)  # 1시간 캐시 (장중에도 빈번한 재호출 방지)
+def ohlcv(request):
+    """
+    yfinance OHLCV 캔들 데이터 반환
+    GET /invest/ohlcv/?symbol=^NDX&years=8
+    응답: [{ date, open, high, low, close, volume }, ...]
+    """
+    symbol = request.GET.get('symbol', '^NDX').strip()
+    try:
+        years = max(1, min(10, int(request.GET.get('years', 8))))
+    except (ValueError, TypeError):
+        years = 8
+
+    try:
+        end = datetime.today()
+        start = end - timedelta(days=years * 365)
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(
+            start=start.strftime('%Y-%m-%d'),
+            end=end.strftime('%Y-%m-%d'),
+            interval='1d',
+            auto_adjust=True,
+        )
+        if df.empty:
+            return JsonResponse({'error': f'{symbol} 데이터 없음'}, status=404)
+
+        df = df.reset_index()
+        # Ticker.history() 는 DatetimeTZDtype 인덱스를 반환할 수 있음
+        date_col = df.columns[0]  # 'Date' 또는 'Datetime'
+        candles = []
+        for _, row in df.iterrows():
+            dt = row[date_col]
+            if hasattr(dt, 'strftime'):
+                date_str = dt.strftime('%Y-%m-%d')
+            else:
+                date_str = str(dt)[:10]
+            candles.append({
+                'date':   date_str,
+                'open':   round(float(row['Open']),   4),
+                'high':   round(float(row['High']),   4),
+                'low':    round(float(row['Low']),    4),
+                'close':  round(float(row['Close']),  4),
+                'volume': int(row.get('Volume', 0) or 0),
+            })
+        return JsonResponse(candles, safe=False)
+    except Exception as e:
+        logger.error("ohlcv error symbol=%s: %s", symbol, e, exc_info=True)
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
 @cache_page(60 * 5)
 def fred_series(request):
     """
