@@ -140,7 +140,7 @@ class UserViewset(viewsets.ModelViewSet):
 
 # 1 시험명Exam(시험명examname)
 class CreateExamViewset(viewsets.ModelViewSet):
-	queryset = Exam.objects.all().prefetch_related("examnumber_set__question_set__options", "examnumber_set__question_set__examqsubject", "examnumber_set__question_set__explanation_set", "examnumber_set__explanation_set__nickname", "examnumber_set__explanation_set__comments_ex__nickname", "examnumber_set__explanation_set__comments_ex__like", "examnumber_set__explanation_set__mainsubject", "examnumber_set__explanation_set__detailsubject", "examnumber_set__explanation_set__like", "examnumber_set__explanation_set__bookmark", "mainsubject_set")   #ModelViewSet은 curd를 제공하므로, 어떤 데이터 모델을 crud할 것인지 필요함 
+	queryset = Exam.objects.all()   #ModelViewSet은 curd를 제공하므로, 어떤 데이터 모델을 crud할 것인지 필요함 
 	serializer_class = ExamSerializer
 	permission_classes = [permissions.AllowAny]
 
@@ -149,7 +149,7 @@ class CreateExamViewset(viewsets.ModelViewSet):
 
 # 2 시험회차Examnumber(회차examnumber - 연도year)
 class CreateExamnumberViewset(viewsets.ModelViewSet):
-	queryset = Examnumber.objects.all().select_related("exam").prefetch_related("question_set__options", "question_set__examqsubject", "question_set__explanation_set", "explanation_set__nickname", "explanation_set__comments_ex__nickname", "explanation_set__comments_ex__like", "explanation_set__mainsubject", "explanation_set__detailsubject", "explanation_set__like", "explanation_set__bookmark")
+	queryset = Examnumber.objects.all().select_related("exam")
 	serializer_class = ExamnumberSerializer
 	permission_classes = [permissions.AllowAny]
 	# ✨ /examnumber/?exam=<id> 로 특정 시험의 회차만 가져올 수 있게 함

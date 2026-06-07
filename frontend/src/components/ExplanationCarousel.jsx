@@ -378,7 +378,7 @@ function ExplanationCard({ ex, rank, user }) {
   return (
     <Card
       size="small"
-      styles={{ body: { padding: 14 } }}
+      styles={{ body: { padding: "0.5rem" } }}
       style={{
         height: "100%",
         background: "#fff",

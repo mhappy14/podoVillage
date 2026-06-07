@@ -350,8 +350,10 @@ const StudyView = () => {
             const qList = questionsByQsubject.get(qs.id) || [];
             return {
               key: String(qs.id),
+              styles: { header: { padding: "0.25rem 1rem" },
+                        body: { padding: "0.25rem" } },  // ← 이 줄 추가
               label: (
-                <Space>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
                   {qs.examstage && <Tag color="blue">{stageLabel(qs.examstage)}</Tag>}
                   <strong>
                     {qsubjectLabel(qs, examnumber?.exam?.examname)}
@@ -359,10 +361,10 @@ const StudyView = () => {
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     {qList.length}문제
                   </Text>
-                </Space>
+                </div>
               ),
               children: (
-                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", padding: "0.25rem" }}>
                   {qList.map((q) => (
                     <QuestionBlock
                       key={q.id}
@@ -553,30 +555,33 @@ function QuestionBlock({
   return (
     <Card
       size="small"
-      styles={{ body: { padding: 14 } }}
+      styles={{ body: { padding: "0.5rem" } }}
       style={{ background: "#fafafa", border: "1px solid #e5e7eb" }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+      <div style={{ display: "flex", alignContent:"center", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>
-            문제 {question.qnumber}번
-          </div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#111827", lineHeight: 1.5 }}>
-            {question.qtext}
+          <div style={{ display: "flex" }}>
+            <div style={{ fontSize: 11, color: "#6b7280", margin:"0 0.5rem 0 0" }}>
+              {question.qnumber}번
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 500, color: "#111827", lineHeight: 1.5 }}>
+              {question.qtext}
+            </div>
           </div>
           {question.qscript && (
-            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4, whiteSpace: "pre-wrap" }}>
+            <div style={{ fontSize: 11, color: "#6b7280", marginTop: "0.5rem", whiteSpace: "pre-wrap" }}>
               {question.qscript}
             </div>
           )}
         </div>
-        <Space size={4} direction="vertical" align="end">
+        <div style={{ display: "flex", gap: "0.25rem", alignItems: "flex-end", fontSize: "11px" }}>
           <Tooltip title="문제 본문의 오탈자를 정정합니다">
-            <Button size="small" icon={<ToolOutlined />} onClick={openEdit}>
+            <Button style={{ fontSize: "10px" }} size="small" icon={<ToolOutlined />} onClick={openEdit}>
               문제 수정
             </Button>
           </Tooltip>
           <Button
+            style={{ fontSize: "10px" }} 
             size="small"
             type={showWriteForm ? "default" : "primary"}
             icon={<EditOutlined />}
@@ -584,10 +589,10 @@ function QuestionBlock({
           >
             {showWriteForm ? "닫기" : "해설 작성"}
           </Button>
-        </Space>
+        </div>
       </div>
 
-      <div style={{ marginTop: 12 }}>
+      <div style={{ marginTop: "0.5rem" }}>
         {showWriteForm ? (
           <StudyWriteExplanation
             inlineMode
