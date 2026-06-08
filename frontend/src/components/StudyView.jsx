@@ -507,6 +507,7 @@ function QuestionBlock({
   const [editScript, setEditScript] = useState(initialQ.qscript || "");
   const [saving, setSaving] = useState(false);
   const [showWriteForm, setShowWriteForm] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(["1"]); // 문제별 collapse 상태 (기본 펼침)
 
   // ex prop 갱신 동기화
   useEffect(() => {
@@ -552,68 +553,99 @@ function QuestionBlock({
   const examIdParam = question.exam?.id ?? question.exam ?? "";
   const enIdParam = question.examnumber?.id ?? question.examnumber ?? "";
 
-  return (
-    <Card
-      size="small"
-      styles={{ body: { padding: "0.5rem" } }}
-      style={{ background: "#fafafa", border: "1px solid #e5e7eb" }}
-    >
-      <div style={{ display: "flex", alignContent:"center", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex" }}>
-            <div style={{ fontSize: 11, color: "#6b7280", margin:"0 0.5rem 0 0" }}>
-              {question.qnumber}번
-            </div>
-            <div style={{ fontSize: 11, fontWeight: 500, color: "#111827", lineHeight: 1.5 }}>
-              {question.qtext}
-            </div>
-          </div>
-          {question.qscript && (
-            <div style={{ fontSize: 11, color: "#6b7280", marginTop: "0.5rem", whiteSpace: "pre-wrap" }}>
-              {question.qscript}
-            </div>
-          )}
-        </div>
-        <div style={{ display: "flex", gap: "0.25rem", alignItems: "flex-end", fontSize: "11px" }}>
-          <Tooltip title="문제 본문의 오탈자를 정정합니다">
-            <Button style={{ fontSize: "10px" }} size="small" icon={<ToolOutlined />} onClick={openEdit}>
-              문제 수정
-            </Button>
-          </Tooltip>
-          <Button
-            style={{ fontSize: "10px" }} 
-            size="small"
-            type={showWriteForm ? "default" : "primary"}
-            icon={<EditOutlined />}
-            onClick={() => setShowWriteForm((v) => !v)}
-          >
-            {showWriteForm ? "닫기" : "해설 작성"}
-          </Button>
-        </div>
-      </div>
+  // 문제 수정 버튼 — 헤더 클릭(접힘 토글)과 분리
+  const handleEditClick = (e) => {
+    e.stopPropagation();
+    openEdit();
+  };
 
-      <div style={{ marginTop: "0.5rem" }}>
-        {showWriteForm ? (
-          <StudyWriteExplanation
-            inlineMode
-            examList={examObj ? [examObj] : []}
-            examNumberList={allExamnumbers}
-            questionList={questions}
-            mainsubjectList={mainsubjects}
-            detailsubjectList={detailsubjects}
-            initialExamId={examIdParam}
-            initialExamnumberId={enIdParam}
-            initialQuestionId={question.id}
-            onSave={(newExp) => {
-              onExplanationAdded?.(newExp);
-              setShowWriteForm(false);
-            }}
-            onCancel={() => setShowWriteForm(false)}
-          />
-        ) : (
-          <ExplanationCarousel explanations={myExps} user={user} />
-        )}
-      </div>
+  // 해설 작성 토글 — 펼쳐진 상태에서만 폼이 보이므로, 열 때 패널도 자동으로 펼친다
+  const handleWriteToggle = (e) => {
+    e.stopPropagation();
+    setShowWriteForm((v) => {
+      const next = !v;
+      if (next) setPanelOpen(["1"]); // 폼을 열면 패널도 펼침
+      return next;
+    });
+  };
+
+  return (
+    <>
+      <Collapse
+        size="small"
+        activeKey={panelOpen}
+        onChange={(keys) => setPanelOpen(Array.isArray(keys) ? keys : [keys])}
+        style={{ background: "#fafafa", border: "1px solid #e5e7eb" }}
+        items={[
+          {
+            key: "1",
+            styles: {
+              header: { padding: "0.5rem", alignItems: "flex-start" },
+              body: { padding: "0.5rem" },
+            },
+            label: (
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
+                <span style={{ fontSize: 11, color: "#6b7280", flex: "0 0 auto" }}>
+                  {question.qnumber}번
+                </span>
+                <span style={{ fontSize: 11, fontWeight: 500, color: "#111827", lineHeight: 1.5 }}>
+                  {question.qtext}
+                </span>
+              </div>
+            ),
+            extra: (
+              <div
+                style={{ display: "flex", gap: "0.25rem", alignItems: "center", fontSize: "11px" }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Tooltip title="문제 본문의 오탈자를 정정합니다">
+                  <Button style={{ fontSize: "10px" }} size="small" icon={<ToolOutlined />} onClick={handleEditClick}>
+                    문제 수정
+                  </Button>
+                </Tooltip>
+                <Button
+                  style={{ fontSize: "10px" }}
+                  size="small"
+                  type={showWriteForm ? "default" : "primary"}
+                  icon={<EditOutlined />}
+                  onClick={handleWriteToggle}
+                >
+                  {showWriteForm ? "닫기" : "해설 작성"}
+                </Button>
+              </div>
+            ),
+            children: (
+              <>
+                {question.qscript && (
+                  <div style={{ fontSize: 11, color: "#6b7280", marginBottom: "0.5rem", whiteSpace: "pre-wrap" }}>
+                    {question.qscript}
+                  </div>
+                )}
+                {showWriteForm ? (
+                  <StudyWriteExplanation
+                    inlineMode
+                    examList={examObj ? [examObj] : []}
+                    examNumberList={allExamnumbers}
+                    questionList={questions}
+                    mainsubjectList={mainsubjects}
+                    detailsubjectList={detailsubjects}
+                    initialExamId={examIdParam}
+                    initialExamnumberId={enIdParam}
+                    initialQuestionId={question.id}
+                    onSave={(newExp) => {
+                      onExplanationAdded?.(newExp);
+                      setShowWriteForm(false);
+                    }}
+                    onCancel={() => setShowWriteForm(false)}
+                  />
+                ) : (
+                  <ExplanationCarousel explanations={myExps} user={user} />
+                )}
+              </>
+            ),
+          },
+        ]}
+      />
 
       {/* 문제 수정 모달 */}
       <Modal
@@ -647,7 +679,7 @@ function QuestionBlock({
           />
         </div>
       </Modal>
-    </Card>
+    </>
   );
 }
 

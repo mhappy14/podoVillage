@@ -400,16 +400,19 @@ function ExplanationCard({ ex, rank, user }) {
       </div>
 
       <div
-        className="wiki-preview"
+        className="wiki-body"
         style={{
-          marginTop: 8,
-          padding: "10px 12px",
+          marginTop: "0.25rem",
+          padding: "0.25rem",
           border: "1px solid #f0f0f0",
           borderRadius: 6,
           background: "#fafafa",
-          maxHeight: CARD_BODY_MAXH,
+          height: CARD_BODY_MAXH,
+          minHeight: 120,
+          maxHeight: "80vh",
           overflowY: "auto",
-          fontSize: 13,
+          resize: "vertical",
+          fontSize: "0.75rem",
           lineHeight: 1.6,
         }}
         dangerouslySetInnerHTML={{ __html: sanitized }}

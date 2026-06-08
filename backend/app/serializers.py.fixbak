@@ -308,6 +308,7 @@ class ExamnumberSerializer(serializers.ModelSerializer):
 class ExamSerializer(serializers.ModelSerializer):
     comment      = CommentSerializer(many=True, read_only=True)
     examnumber   = ExamnumberSerializer(source="examnumber_set", many=True, read_only=True)
+    mainsubject  = MainsubjectSerializer(source="mainsubject_set", many=True, read_only=True)
 
     class Meta:
         model = Exam

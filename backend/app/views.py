@@ -140,7 +140,7 @@ class UserViewset(viewsets.ModelViewSet):
 
 # 1 시험명Exam(시험명examname)
 class CreateExamViewset(viewsets.ModelViewSet):
-	queryset = Exam.objects.all().prefetch_related("examnumber_set__question_set__options", "examnumber_set__question_set__examqsubject", "examnumber_set__question_set__explanation_set", "examnumber_set__explanation_set__nickname", "examnumber_set__explanation_set__comments_ex__nickname", "examnumber_set__explanation_set__comments_ex__like", "examnumber_set__explanation_set__mainsubject", "examnumber_set__explanation_set__detailsubject", "examnumber_set__explanation_set__like", "examnumber_set__explanation_set__bookmark", "mainsubject_set")   #ModelViewSet은 curd를 제공하므로, 어떤 데이터 모델을 crud할 것인지 필요함 
+	queryset = Exam.objects.all().prefetch_related("examnumber_set__question_set__options", "examnumber_set__question_set__examqsubject", "examnumber_set__question_set__explanation_set", "examnumber_set__explanation_set__nickname", "examnumber_set__explanation_set__comments_ex__nickname", "examnumber_set__explanation_set__comments_ex__like", "examnumber_set__explanation_set__mainsubject", "examnumber_set__explanation_set__detailsubject", "examnumber_set__explanation_set__like", "examnumber_set__explanation_set__bookmark")   #ModelViewSet은 curd를 제공하므로, 어떤 데이터 모델을 crud할 것인지 필요함 
 	serializer_class = ExamSerializer
 	permission_classes = [permissions.AllowAny]
 
@@ -242,7 +242,7 @@ class CreateMainsubjectViewset(viewsets.ModelViewSet):
 			if not exam_id or not mainnumber:
 					return Response({"error": "exam and mainnumber are required parameters."}, status=400)
 
-			exists = Mainsubject.objects.filter(exam_id=exam_id, mainnumber=mainnumber).exists()
+			exists = Mainsubject.objects.filter(mainnumber=mainnumber).exists()
 			if exists:
 					return Response({"exists": True}, status=200)
 			return Response({"exists": False}, status=200)

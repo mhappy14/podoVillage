@@ -187,7 +187,7 @@ class Examnumber(models.Model):
 		super(Examnumber, self).save(*args, **kwargs)
 
 	class Meta:
-			unique_together = ('exam', 'examnumber')  # 복합 유일성 제약 조건
+			unique_together = ('exam', 'year', 'examnumber')  # 복합 유일성 제약 조건
 
 class ExamQsubject(models.Model):
     # examstage TYPE은 비-기술사 자격증(1차/2차/3차)에서만 사용. 기술사는 NULL.
@@ -342,7 +342,6 @@ class Option(models.Model):
 			return f"[{self.order}] {self.text[:40]}"
 
 class Mainsubject(models.Model):
-	exam = models.ForeignKey(Exam, on_delete=models.SET_NULL, null=True)
 	mainnumber = models.PositiveIntegerField(null=False)
 	mainname = models.CharField(unique=True, max_length=200)
 	mainslug = models.SlugField(unique=True, null=True, blank=True)
@@ -357,7 +356,6 @@ class Mainsubject(models.Model):
 		return  f"{self.mainslug}"
 
 class Detailsubject(models.Model):
-	exam = models.ForeignKey(Exam, on_delete=models.SET_NULL, null=True)
 	mainslug = models.ForeignKey(Mainsubject, on_delete=models.SET_NULL, null=True)
 	detailnumber = models.PositiveIntegerField(null=True)
 	detailtitle = models.CharField(unique=True, max_length=400, null=True)
@@ -540,6 +538,10 @@ class IndicatorSnapshot(models.Model):
     )
     quarter_date = models.DateField(help_text="기준 분기 첫달 1일")
     observation_date = models.DateField(null=True, blank=True)
+    # FRED 가 시리즈별로 제공하는 'Updated' 날짜 (관측일과 다름). FRED 시리즈만 존재.
+    series_updated = models.DateField(null=True, blank=True)
+    # FRED release 의 차기(예정) 발표일. 예정 발표일이 공시된 경우에만 존재.
+    next_release = models.DateField(null=True, blank=True)
     value = models.FloatField(null=True, blank=True)
     source = models.CharField(max_length=32, default="fred")
     fetched_at = models.DateTimeField(auto_now=True)

@@ -167,7 +167,7 @@ const About = () => {
 
       <div className="about-hero">
         <h1 className="neon-title">Podo Village</h1>
-        <p className="neon-sub">글, 지식, 그리고 아이디어의 놀이터</p>
+        <p className="neon-sub">공부 놀이터</p>
         <div className="cta-group">
           <Link to="/study" className="cta-btn">Start Study</Link>
           <Link to="/paper" className="cta-btn alt">Explore Papers</Link>

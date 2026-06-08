@@ -440,6 +440,17 @@ function IndicatorSparkline({ dates, values, unit, color = "#1677ff" }) {
 // ---------- 지표 카드 ----------
 function IndicatorCard({ item, current, prevQ, prevY, weight, onWeightChange, enabled, onToggle }) {
   const noData = !item.seriesId;
+  // 외부 링크: FRED 시리즈가 있으면 FRED, 없고 linkUrl(Yahoo 등)이 있으면 그쪽으로
+  const linkHref = item.fredId
+    ? `https://fred.stlouisfed.org/series/${item.fredId}`
+    : item.linkUrl || null;
+  const linkTip = item.fredId
+    ? `FRED에서 보기: ${item.fredId}`
+    : item.linkUrl
+    ? "Yahoo Finance에서 보기"
+    : item.seriesId
+    ? `데이터 소스: ${item.seriesId}`
+    : "";
   const sigQ = computeSignal(item, current, prevQ);
   const meta = SIGNAL_META[sigQ];
   const qoq = current && prevQ ? current.value - prevQ.value : null;
@@ -486,11 +497,28 @@ function IndicatorCard({ item, current, prevQ, prevY, weight, onWeightChange, en
     >
       {/* 상단: 이름 + 우상단 토글 스위치 */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-        <Tooltip title={item.seriesId ? `FRED: ${item.seriesId}` : ""}>
-          <Text strong style={{ fontSize: 13, lineHeight: 1.3, flex: 1 }}>
-            {item.name}
-          </Text>
-        </Tooltip>
+        {linkHref ? (
+          <Tooltip title={linkTip}>
+            <Text strong style={{ fontSize: 13, lineHeight: 1.3, flex: 1 }}>
+              <a
+                href={linkHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "inherit", textDecoration: "none", borderBottom: "1px dashed #1677ff" }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "#1677ff"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "inherit"; }}
+              >
+                {item.name}
+              </a>
+            </Text>
+          </Tooltip>
+        ) : (
+          <Tooltip title={linkTip}>
+            <Text strong style={{ fontSize: 13, lineHeight: 1.3, flex: 1 }}>
+              {item.name}
+            </Text>
+          </Tooltip>
+        )}
         {!noData && (
           <Tag color={meta.color} icon={meta.icon} style={{ marginRight: 0, fontSize: 11 }}>
             {meta.label}
@@ -515,9 +543,26 @@ function IndicatorCard({ item, current, prevQ, prevY, weight, onWeightChange, en
             suffix={<Text type="secondary" style={{ fontSize: 12 }}>{item.unit}</Text>}
             valueStyle={{ fontSize: 20, fontWeight: 700, lineHeight: 1.2 }}
           />
-          <Text type="secondary" style={{ fontSize: 11, marginLeft: "auto" }}>
-            관측일: {current?.date || "데이터 없음"}
-          </Text>
+          <div style={{ marginLeft: "auto", textAlign: "right" }}>
+            {current?.updated ? (
+              <Tooltip title={`FRED 갱신일 · 관측일: ${current?.date || "—"}`}>
+                <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
+                  갱신일: {current.updated}
+                </Text>
+              </Tooltip>
+            ) : (
+              <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
+                관측일: {current?.date || "데이터 없음"}
+              </Text>
+            )}
+            {current?.next_release && (
+              <Tooltip title="FRED 차기 예정 발표일">
+                <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
+                  예정일: {current.next_release}
+                </Text>
+              </Tooltip>
+            )}
+          </div>
           </div>
           <div style={{ marginTop: 4, display: "flex", gap: 5, flexWrap: "wrap" }}>
             <Text style={{ color: deltaColor(qoq), fontWeight: 600, fontSize: 12, marginRight: "auto" }}>
@@ -1059,7 +1104,7 @@ export default function InvestIndicator() {
         Object.entries(inds).forEach(([key, anchors]) => {
           shaped[key] = {
             current: anchors.current && anchors.current.value !== null
-              ? { date: anchors.current.date, value: anchors.current.value }
+              ? { date: anchors.current.date, value: anchors.current.value, updated: anchors.current.updated || null, next_release: anchors.current.next_release || null }
               : null,
             prevQ: anchors.prev_q && anchors.prev_q.value !== null
               ? { date: anchors.prev_q.date, value: anchors.prev_q.value }

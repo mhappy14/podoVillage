@@ -665,12 +665,14 @@ INDICATOR_DEFS = [
 
     # 3. 유동성
     {"key": "M2SL", "kind": "fred", "ref": "M2SL"},
-    {"key": "NETLIQ", "kind": "computed", "ref": "net_liquidity"},
+    # 합성 지표지만 갱신일은 대표 구성 시리즈(WALCL, 주간 발표)의 FRED last_updated 사용
+    {"key": "NETLIQ", "kind": "computed", "ref": "net_liquidity", "updated_from": "WALCL"},
     {"key": "SOFR", "kind": "fred", "ref": "SOFR"},
     {"key": "DTWEXBGS", "kind": "fred", "ref": "DTWEXBGS"},
 
     # 4. 경기
     {"key": "CPIAUCSL", "kind": "fred", "ref": "CPIAUCSL"},
+    {"key": "UNRATE", "kind": "fred", "ref": "UNRATE"},
     # ISM Mfg PMI: 라이선스 데이터라 직접 무료 제공 X.
     # Philly Fed Mfg General Activity 를 프록시로 사용 (ISM 과 상관계수 ~0.8)
     {"key": "ISM_MFG", "kind": "fred", "ref": "GACDFSA066MSFRBPHI"},
@@ -728,6 +730,81 @@ def _fetch_fred_at(series_id, end_date):
         return None
     except Exception as e:
         logger.warning("[FRED] %s @%s 실패: %s", series_id, end_date, e)
+        return None
+
+
+# ---------- FRED 시리즈 메타 (Updated 날짜) ----------
+def _fetch_fred_last_updated(series_id):
+    """FRED /series 엔드포인트의 last_updated (시리즈 갱신일) 를 date 로 반환."""
+    key = getattr(settings, "FRED_API_KEY", None)
+    if not key:
+        return None
+    try:
+        resp = requests.get(
+            "https://api.stlouisfed.org/fred/series",
+            params={
+                "series_id": series_id,
+                "api_key": key,
+                "file_type": "json",
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        seriess = resp.json().get("seriess") or []
+        if not seriess:
+            return None
+        lu = seriess[0].get("last_updated")  # 예: "2026-04-02 07:31:02-05"
+        if not lu:
+            return None
+        return _parse_date(lu[:10])
+    except Exception as e:
+        logger.warning("[FRED] %s last_updated 실패: %s", series_id, e)
+        return None
+
+
+# ---------- FRED 차기(예정) 발표일 ----------
+def _fetch_fred_next_release(series_id):
+    """시리즈가 속한 release 의 다음 예정 발표일(오늘 이후 가장 이른 날짜)을 반환.
+    예정 발표일이 공시되지 않은 시리즈는 None."""
+    key = getattr(settings, "FRED_API_KEY", None)
+    if not key:
+        return None
+    try:
+        # 1) 시리즈 → release_id
+        r1 = requests.get(
+            "https://api.stlouisfed.org/fred/series/release",
+            params={"series_id": series_id, "api_key": key, "file_type": "json"},
+            timeout=15,
+        )
+        r1.raise_for_status()
+        releases = r1.json().get("releases") or []
+        release_id = releases[0].get("id") if releases else None
+        if release_id is None:
+            return None
+        # 2) release 의 발표일 목록 — 예정일 포함하려면 realtime_end 를 미래로
+        today = _dt.date.today()
+        r2 = requests.get(
+            "https://api.stlouisfed.org/fred/release/dates",
+            params={
+                "release_id": release_id,
+                "api_key": key,
+                "file_type": "json",
+                "include_release_dates_with_no_data": "true",
+                "sort_order": "asc",
+                "realtime_start": today.strftime("%Y-%m-%d"),
+                "realtime_end": "9999-12-31",
+                "limit": 100,
+            },
+            timeout=15,
+        )
+        r2.raise_for_status()
+        for d in (r2.json().get("release_dates") or []):
+            dd = _parse_date(d.get("date") or "")
+            if dd and dd > today:
+                return dd
+        return None
+    except Exception as e:
+        logger.warning("[FRED] %s next_release 실패: %s", series_id, e)
         return None
 
 
@@ -797,6 +874,11 @@ def _fetch_indicator_at(defn, end_date):
     return None, "unavailable"
 
 
+def _uses_yfinance(defn):
+    """yfinance 실시간 시세 기반 지표인지 (MOVE/SOX 및 SPY/TLT 합성)."""
+    return defn.get("kind") == "yfinance" or defn.get("ref") == "spy_tlt_ratio"
+
+
 def update_indicators_for_quarter(quarter_date):
     """주어진 분기 첫날을 기준으로 (current, prev_q, prev_y) 3개 anchor 모두 fetch + 저장"""
     anchors = {
@@ -804,17 +886,49 @@ def update_indicators_for_quarter(quarter_date):
         "prev_q":  _add_quarters(quarter_date, -1),
         "prev_y":  _add_years(quarter_date, -1),
     }
+    today = _dt.date.today()
+    # 진행 중인 현재 분기를 갱신할 때만 yfinance(실시간) 지표의 current 앵커를
+    # 분기 시작일이 아니라 '오늘' 기준으로 받아온다. (과거 분기 재계산 시엔 그대로)
+    is_live_quarter = (quarter_date == _quarter_start(today))
     written = 0
     skipped = 0
     for defn in INDICATOR_DEFS:
+        # 갱신일(Updated)·차기 발표일(next_release)은 anchor 와 무관하게 시리즈당 1회만 조회.
+        # FRED 시리즈는 ref 로, 합성 지표(computed)는 updated_from 으로 지정한
+        # 대표 FRED 시리즈를 메타데이터 기준으로 사용.
+        if defn["kind"] == "fred" and defn.get("ref"):
+            meta_series = defn["ref"]
+        elif defn.get("updated_from"):
+            meta_series = defn["updated_from"]
+        else:
+            meta_series = None
+        if meta_series:
+            series_updated = _fetch_fred_last_updated(meta_series)
+            next_release = _fetch_fred_next_release(meta_series)
+        else:
+            series_updated = None
+            next_release = None
         for anchor_key, anchor_date in anchors.items():
-            obs, source = _fetch_indicator_at(defn, anchor_date)
+            # 실시간(yfinance) 지표의 현재 분기 current 앵커는 오늘 기준으로 fetch
+            use_today = (
+                anchor_key == "current" and is_live_quarter and _uses_yfinance(defn)
+            )
+            fetch_date = today if use_today else anchor_date
+            obs, source = _fetch_indicator_at(defn, fetch_date)
+            if obs and use_today:
+                observation_date = today          # 실시간 값 → 관측일을 오늘로 표기
+            elif obs:
+                observation_date = _parse_date(obs["date"])
+            else:
+                observation_date = None
             obj, _ = IndicatorSnapshot.objects.update_or_create(
                 indicator_key=defn["key"],
                 quarter_anchor=anchor_key,
                 quarter_date=quarter_date,
                 defaults={
-                    "observation_date": _parse_date(obs["date"]) if obs else None,
+                    "observation_date": observation_date,
+                    "series_updated": series_updated,
+                    "next_release": next_release,
                     "value": obs["value"] if obs else None,
                     "source": source,
                 },
@@ -835,7 +949,7 @@ def indicator_snapshots(request):
     응답: {
       quarter: '2026-04-01',
       indicators: {
-        DGS10: { current: {date, value, source}, prev_q: {...}, prev_y: {...} },
+        DGS10: { current: {date, updated, next_release, value, source}, prev_q: {...}, prev_y: {...} },
         ...
       }
     }
@@ -860,6 +974,8 @@ def indicator_snapshots(request):
         d = indicators.setdefault(r.indicator_key, {})
         d[r.quarter_anchor] = {
             "date": r.observation_date.isoformat() if r.observation_date else None,
+            "updated": r.series_updated.isoformat() if r.series_updated else None,
+            "next_release": r.next_release.isoformat() if r.next_release else None,
             "value": r.value,
             "source": r.source,
         }
