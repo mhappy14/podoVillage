@@ -130,11 +130,11 @@ body{
 .wiki-body ul,
 .wiki-body ol {
   margin: 0.3em 0;
-  padding-left: 0.3em;
+  padding-left: 1.5em;
 }
 .wiki-body li {
-  margin: 0;
-  padding-left: 0.3em;
+  margin: 2px 0;
+  padding-left: 0;
 }
 
 /* ---- 인용문 ---- */

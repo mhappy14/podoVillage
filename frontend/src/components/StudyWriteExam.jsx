@@ -7,10 +7,10 @@ const { Title } = Typography;
 const { Option } = Select;
 
 const EXAMTYPE_OPTIONS = [
-  { value: 'License', label: '자격증' },
-  { value: 'Public',  label: '공무원' },
-  { value: 'Recruit', label: '기업채용' },
-  { value: 'Other',   label: '기타' },
+  { value: 'PE',       label: '기술사' },
+  { value: 'Engineer', label: '기사' },
+  { value: 'Public',   label: '공무원' },
+  { value: 'PSAT',     label: 'PSAT' },
 ];
 
 // 백엔드 모델과 동일한 ragent 문자열 values

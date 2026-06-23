@@ -1,7 +1,7 @@
 // src/Wiki.jsx
 import React, { useEffect, useState } from 'react';
 import { List, Typography, Tag, Button, Space, Spin, Alert, message } from 'antd';
-import { Link, useNavigate, Outlet, useOutlet } from 'react-router-dom'; // ✅ 추가
+import { Link, useNavigate, Outlet, useOutlet } from 'react-router-dom';
 import AxiosInstance from './AxiosInstance';
 
 const { Title, Text } = Typography;

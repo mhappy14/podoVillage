@@ -8,6 +8,10 @@ import Register from './components/Register';
 import Login from './components/Login';
 import About from './components/About';
 import Study from './components/Study';
+import StudyTable1 from './components/StudyTable1';
+import StudyTable2 from './components/StudyTable2';
+import StudyTable3 from './components/StudyTable3';
+import StudyTable4 from './components/StudyTable4';
 import StudyView from './components/StudyView';
 import StudyEdit from './components/StudyEdit';
 import StudyWrite from './components/StudyWrite';
@@ -74,6 +78,11 @@ function App() {
                 <Route element={<DefaultLayout />}>
                   <Route path="/home" element={<Home />} />
                   <Route path="/study" element={<Study />} />
+                  <Route path="/study/table" element={<StudyTable1 />} />
+                  <Route path="/study/table1" element={<StudyTable1 />} />
+                  <Route path="/study/table2" element={<StudyTable2 />} />
+                  <Route path="/study/table3" element={<StudyTable3 />} />
+                  <Route path="/study/table4" element={<StudyTable4 />} />
                   <Route path="/study/write" element={<StudyWrite />} />
                   <Route path="/study/view/:id" element={<StudyView />} />
                   <Route path="/study/edit/:id" element={<StudyEdit />} />

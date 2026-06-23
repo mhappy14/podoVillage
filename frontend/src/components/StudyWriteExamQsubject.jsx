@@ -51,8 +51,11 @@ export default function StudyWriteExamQsubject({ examList, onQsubjectAdd }) {
     () => exams.find((e) => String(e?.id) === String(selectedExam)),
     [exams, selectedExam]
   );
-  const isLicense = selectedExamObj?.examtype === 'License';
-  const isEngineer = !!selectedExamObj && (selectedExamObj.examname || '').includes('기술사');
+  // 기사(Engineer): 시험단계(1차/2차/3차) 입력이 필요한 시험
+  const isGisa = selectedExamObj?.examtype === 'Engineer';
+  // 기술사(PE): 교시(esn) 기반, 과목명/시험단계 면제
+  const isEngineer = !!selectedExamObj &&
+    (selectedExamObj.examtype === 'PE' || (selectedExamObj.examname || '').includes('기술사'));
 
   // 시험이 바뀌면 해당 시험의 과목 + 회차를 fetch
   useEffect(() => {
@@ -65,7 +68,7 @@ export default function StudyWriteExamQsubject({ examList, onQsubjectAdd }) {
       setIsDupEst(false);
       return;
     }
-    if (!isLicense) setExamStage(null);
+    if (!isGisa) setExamStage(null);
 
     let alive = true;
     (async () => {
@@ -96,7 +99,7 @@ export default function StudyWriteExamQsubject({ examList, onQsubjectAdd }) {
       }
     })();
     return () => { alive = false; };
-  }, [selectedExam, isLicense]);
+  }, [selectedExam, isGisa]);
 
   // 비-기술사: esn/est 중복 체크
   useEffect(() => {
@@ -172,8 +175,8 @@ export default function StudyWriteExamQsubject({ examList, onQsubjectAdd }) {
     const esnStr = String(esn || '').trim();
     const estStr = String(est || '').trim();
 
-    if (isLicense && !examStage) {
-      message.error('자격증 시험은 시험단계를 선택해야 합니다.');
+    if (isGisa && !examStage) {
+      message.error('기사 시험은 시험단계를 선택해야 합니다.');
       return;
     }
     if (!/^[1-9]\d*$/.test(esnStr)) {
@@ -193,7 +196,7 @@ export default function StudyWriteExamQsubject({ examList, onQsubjectAdd }) {
         exam: selectedExam,
         esn: Number(esnStr),
         est: estStr,
-        examstage: isLicense ? examStage : null,
+        examstage: isGisa ? examStage : null,
       };
       const res = await AxiosInstance.post('examqsubject/', payload);
       message.success('시험 과목이 성공적으로 등록되었습니다.');
@@ -304,7 +307,7 @@ export default function StudyWriteExamQsubject({ examList, onQsubjectAdd }) {
           </>
         ) : (
           <>
-            {isLicense && (
+            {isGisa && (
               <Form.Item label="시험 단계" required>
                 <Select
                   value={examStage}
@@ -360,7 +363,7 @@ export default function StudyWriteExamQsubject({ examList, onQsubjectAdd }) {
             const disabled =
               !selectedExam ||
               (isEngineer && (!selectedExamnumberId || engAllDone)) ||
-              (!isEngineer && (!esn || isDupEsn || !est || isDupEst || (isLicense && !examStage)));
+              (!isEngineer && (!esn || isDupEsn || !est || isDupEst || (isGisa && !examStage)));
 
             let label;
             if (isEngineer) {

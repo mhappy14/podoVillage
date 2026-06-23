@@ -24,8 +24,8 @@
 
 /* 단락/목록/인용 */
 .wiki-body p, .wiki-preview p { margin: 0; padding: 0; }
-.wiki-body ul, .wiki-preview ul { margin: 0; padding: 0; }
-.wiki-body ol, .wiki-preview ol { margin: 0; padding: 0; }
+.wiki-body ul, .wiki-preview ul { margin: 0.3em 0; padding-left: 1.5em; }
+.wiki-body ol, .wiki-preview ol { margin: 0.3em 0; padding-left: 1.5em; }
 .wiki-body blockquote, .wiki-preview blockquote {
   border-left: 3px solid #e5e7eb;
   margin: 0;
@@ -67,7 +67,7 @@
   margin: 12px 0;
 }
 .wiki-body .toc ul, .wiki-preview .toc ul { list-style: none; padding-left: 1rem; margin: .25rem 0; }
-.wiki-body .toc li, .wiki-preview .toc li { margin: 2px 0; }
+.wiki-body .toc li, .wiki-preview .toc li { list-style: none; padding-left: 1rem; margin: .25rem 0; }
 
 /* 각주 */
 .wiki-body .footnotes, .wiki-preview .footnotes { margin-top: 1rem; font-size: .92em; }

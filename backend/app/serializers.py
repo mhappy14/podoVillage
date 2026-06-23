@@ -199,12 +199,11 @@ class ExamQsubjectSerializer(serializers.ModelSerializer):
         exam = attrs.get("exam", getattr(self.instance, "exam", None))
         examstage = attrs.get("examstage", getattr(self.instance, "examstage", None))
 
-        if exam and getattr(exam, "examtype", None) == "License":
-            # ✨ 기술사는 examstage 면제 — model.clean() 과 동일 규칙
-            is_engineer = "기술사" in (getattr(exam, "examname", "") or "")
-            if not is_engineer and not examstage:
+        if exam and getattr(exam, "examtype", None) == "Engineer":
+            # ✨ 기사는 시험단계 필수, 기술사(PE)는 면제 — model.clean() 과 동일 규칙
+            if not examstage:
                 raise serializers.ValidationError(
-                    {"examstage": "자격증 시험(기술사 제외)은 시험단계(examstage)가 반드시 필요합니다."}
+                    {"examstage": "기사 시험은 시험단계(examstage)가 반드시 필요합니다."}
                 )
         else:
             pass

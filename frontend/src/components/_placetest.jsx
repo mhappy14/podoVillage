@@ -1,0 +1,14 @@
+import React, { useEffect, useRef } from "react";
+import { Box, Typography } from "@mui/material";
+
+/**
+ * 브이월드(VWorld) 인증키
+ * - 운영 시에는 .env 의 VITE_VWORLD_KEY 로 옮기는 것을 권장합니다.
+ *   (예: frontend/.env 에  VITE_VWORLD_KEY=60F47693-... 추가 후 재시작)
+ * - 브이월드 인증키는 "발급 시 등록한 도메인"에서만 동작합니다.
+ *   개발 환경이라면 http://localhost:5173 (Vite 기본 포트) 가 등록돼 있어야 합니다.
+ */
+const VWORLD_KEY =
+  "60F47693-5E7D-37C4-B609-0A71EEC0DF27";
+
+// 브이월드는 요청

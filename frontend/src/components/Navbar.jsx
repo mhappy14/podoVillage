@@ -47,6 +47,7 @@ export default function Navbar(props) {
   return (
     <Box sx={{ width: '100%' }}>
       <div className={"NavBackground"}>
+       <Box sx={{ display: 'flex', width: '100%', maxWidth: '1248px', margin: '0 auto' }}>
         {/* Home */}
         <Box sx={{ width: '10%', textAlign: 'left', padding: '0 0 0 1.5rem' }}>
           {renderTab('Home', '/home')}
@@ -88,6 +89,7 @@ export default function Navbar(props) {
             renderTab('Login', '/login')
           )}
         </Box>
+       </Box>
       </div>
 
       <Box component="main" sx={{ flexGrow: 1, p: 0.5 }}>

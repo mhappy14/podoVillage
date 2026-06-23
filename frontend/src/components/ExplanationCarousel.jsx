@@ -403,15 +403,13 @@ function ExplanationCard({ ex, rank, user }) {
         className="wiki-body"
         style={{
           marginTop: "0.25rem",
-          padding: "0.25rem",
+          padding: "0.25rem 1rem 0.25rem 1rem",
           border: "1px solid #f0f0f0",
           borderRadius: 6,
           background: "#fafafa",
-          height: CARD_BODY_MAXH,
+          height: "auto",
           minHeight: 120,
-          maxHeight: "80vh",
-          overflowY: "auto",
-          resize: "vertical",
+          overflowY: "visible",
           fontSize: "0.75rem",
           lineHeight: 1.6,
         }}

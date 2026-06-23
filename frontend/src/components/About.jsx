@@ -167,7 +167,7 @@ const About = () => {
 
       <div className="about-hero">
         <h1 className="neon-title">Podo Village</h1>
-        <p className="neon-sub">공부 놀이터</p>
+        <p className="neon-sub">포도마을 ㅎㅎ</p>
         <div className="cta-group">
           <Link to="/study" className="cta-btn">Start Study</Link>
           <Link to="/paper" className="cta-btn alt">Explore Papers</Link>
@@ -179,13 +179,13 @@ const About = () => {
       {/* 하단 소개 섹션(기존 섹션 대체 요약) */}
       <div className="about-sections">
         <SectionCard title="Study">
-          자격증/시험 대비 모범답안을 쓰고 피드백을 주고받는 공간.
+          자격시험 모범답안 작성 및 피드백 공유 공간
         </SectionCard>
         <SectionCard title="Paper">
-          학술/학위 논문에서 핵심만 쏙쏙. 인사이트를 구조화하세요.
+          학술/학위 논문의 핵심만 쏙쏙 인사이트 구조화
         </SectionCard>
         <SectionCard title="Wiki">
-          여러 사람이 함께 개념을 설명하는 협업 지식 베이스.
+          여러 사람이 함께 개념을 구축하는 협업 장터
         </SectionCard>
       </div>
     </div>

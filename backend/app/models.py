@@ -60,10 +60,10 @@ class Exam(models.Model):
     )
 
     EXAMTYPE = (
-        ("License", "자격증"),
-        ("Public",  "공무원"),
-        ("Recruit", "기업채용"),
-        ("Other",   "기타"),
+        ("PE",       "기술사"),   # Professional Engineer (기술사)
+        ("Engineer", "기사"),     # 기사
+        ("Public",   "공무원"),
+        ("PSAT",     "PSAT"),
     )
 
     # Recruit Agent (공무원일 때만 사용)
@@ -109,7 +109,7 @@ class Exam(models.Model):
     RAGENT_NEED_RGROUP   = {"국가직", "지방직", "서울시", "국회직", "법원직"}
 
     examname = models.CharField(max_length=200, unique=True, null=False)
-    examtype = models.CharField(max_length=20, choices=EXAMTYPE, null=False, default="License")
+    examtype = models.CharField(max_length=20, choices=EXAMTYPE, null=False, default="PE")
 
     # 조건부 필드들: DB 레벨에선 optional로 두고, 검증은 clean()/serializer에서 강제
     ragent    = models.CharField(max_length=10, choices=RAGENT, null=True, blank=True)
@@ -223,14 +223,14 @@ class ExamQsubject(models.Model):
         ordering = ['exam_id', 'examnumber_id', 'esn']
 
     def clean(self):
-        # 자격증이지만 "기술사"는 examstage 면제
-        if self.exam and self.exam.examtype == "License":
-            is_engineer = "기술사" in (self.exam.examname or "")
-            if not is_engineer and not self.examstage:
-                raise ValidationError("자격증 시험(기술사 제외)은 시험단계(examstage)가 반드시 필요합니다.")
-        # "기술사"가 아닌 시험은 과목명 필수
-        if self.exam and "기술사" not in (self.exam.examname or ""):
-            if not self.est:
+        # 기사(Engineer)는 시험단계(1차/2차/3차) 필수. 기술사(PE)는 면제.
+        if self.exam and self.exam.examtype == "Engineer":
+            if not self.examstage:
+                raise ValidationError("기사 시험은 시험단계(examstage)가 반드시 필요합니다.")
+        # 기술사(PE)가 아닌 시험은 과목명(est) 필수
+        if self.exam:
+            is_pe = self.exam.examtype == "PE" or "기술사" in (self.exam.examname or "")
+            if not is_pe and not self.est:
                 raise ValidationError("과목명(est)은 반드시 입력해야 합니다.")
 
     def save(self, *args, **kwargs):

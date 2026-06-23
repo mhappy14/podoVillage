@@ -33,6 +33,8 @@ import {
   EditOutlined,
   ToolOutlined,
   PlusOutlined,
+  DownOutlined,
+  UpOutlined,
 } from "@ant-design/icons";
 import AxiosInstance from "./AxiosInstance";
 import ExplanationCarousel from "./ExplanationCarousel";
@@ -93,6 +95,7 @@ const StudyView = () => {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [activeKeys, setActiveKeys] = useState([]); // collapse 상태
+  const [qbCollapse, setQbCollapse] = useState({}); // examstage별 QuestionBlock 일괄 접기/펴기 신호
   const [addQOpen, setAddQOpen] = useState(false);  // 문제 등록 모달
 
   useEffect(() => {
@@ -348,10 +351,12 @@ const StudyView = () => {
           onChange={(keys) => setActiveKeys(Array.isArray(keys) ? keys : [keys])}
           items={usedQsubjects.map((qs) => {
             const qList = questionsByQsubject.get(qs.id) || [];
+            const panelKey = String(qs.id);
+            const cs = qbCollapse[panelKey] || { collapsed: false, n: 0 };
             return {
-              key: String(qs.id),
+              key: panelKey,
               styles: { header: { padding: "0.25rem 1rem" },
-                        body: { padding: "0.25rem" } },  // ← 이 줄 추가
+                        body: { padding: "0.25rem" } },
               label: (
                 <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
                   {qs.examstage && <Tag color="blue">{stageLabel(qs.examstage)}</Tag>}
@@ -361,6 +366,25 @@ const StudyView = () => {
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     {qList.length}문제
                   </Text>
+                  <Button
+                    type="text"
+                    size="small"
+                    style={{ fontSize: 10 }}
+                    icon={cs.collapsed ? <DownOutlined /> : <UpOutlined />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setQbCollapse((prev) => {
+                        const cur = prev[panelKey] || { collapsed: false, n: 0 };
+                        return {
+                          ...prev,
+                          [panelKey]: { collapsed: !cur.collapsed, n: cur.n + 1 },
+                        };
+                      });
+                    }}
+                  >
+                    {`${qsubjectLabel(qs, examnumber?.exam?.examname)} `}
+                    {cs.collapsed ? "문제 모두 펴기" : "문제 모두 접기"}
+                  </Button>
                 </div>
               ),
               children: (
@@ -369,6 +393,7 @@ const StudyView = () => {
                     <QuestionBlock
                       key={q.id}
                       question={q}
+                      collapseSignal={cs}
                       explanations={explanations}
                       user={user}
                       examObj={examObj}
@@ -491,6 +516,7 @@ const StudyView = () => {
 // ---------- 한 문제 + 해설 carousel ----------
 function QuestionBlock({
   question: initialQ,
+  collapseSignal,
   explanations,
   user,
   examObj,
@@ -513,6 +539,12 @@ function QuestionBlock({
   useEffect(() => {
     setQuestion(initialQ);
   }, [initialQ.id]);
+
+  // 상위 examstage 헤더의 일괄 접기/펴기 신호에 반응
+  useEffect(() => {
+    if (!collapseSignal || collapseSignal.n === 0) return;
+    setPanelOpen(collapseSignal.collapsed ? [] : ["1"]);
+  }, [collapseSignal?.n]);
 
   // 이 문제의 해설들 (carousel 내부에서 다시 sort 됨)
   const myExps = useMemo(() => {
@@ -617,7 +649,7 @@ function QuestionBlock({
             children: (
               <>
                 {question.qscript && (
-                  <div style={{ fontSize: 11, color: "#6b7280", marginBottom: "0.5rem", whiteSpace: "pre-wrap" }}>
+                  <div style={{ fontSize: 11, color: "#6b7280", marginBottom: "0.5rem", whiteSpace: "pre-wrap", overflow: "visible", height: "auto", maxHeight: "none", wordBreak: "break-word", overflowWrap: "anywhere" }}>
                     {question.qscript}
                   </div>
                 )}
