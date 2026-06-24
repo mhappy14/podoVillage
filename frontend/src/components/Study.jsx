@@ -225,13 +225,13 @@ const Study = () => {
   return (
     <div style={{ padding: "1rem", maxWidth: 1248, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div style={{ fontSize: 20, fontWeight: 1000, color: "#1f2937", lineHeight: 1.3, margin: 0 }}>
-          {fCategory} 시험 보관소{" "}
+        <div style={{ display: "flex", margin: 0, alignItems: "center", gap: "0.5rem" }}>
+          <div style={{ fontSize: 20, fontWeight: 1000, color: "#1f2937", lineHeight: 1.3}}>
+            시험·해설 보관소{" "}
+          </div>
           <Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
             ({visible.length}건 / 총 {enriched.length}건)
           </Text>
-        </div>
-        <Space>
           <Select
             value={fCategory}
             onChange={(v) => {
@@ -246,10 +246,15 @@ const Study = () => {
           <Link to={tableInfo.path}>
             <Button>{tableInfo.label}</Button>
           </Link>
-          <Button onClick={resetFilters}>필터 초기화</Button>
-          <Link to="/study/write">
-            <Button>해설 작성</Button>
+          <Link to="/study/scope">
+            <Button>시험 범위</Button>
           </Link>
+        </div>
+        <Space>
+          <Button onClick={resetFilters}>필터 초기화</Button>
+{/*           <Link to="/study/write">
+            <Button>해설 작성</Button>
+          </Link> */}
         </Space>
       </div>
 
@@ -367,7 +372,7 @@ function ExamIcon({ item }) {
       <div>
         <div
           style={{
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: 700,
             color: "#1f2937",
             lineHeight: 1.3,

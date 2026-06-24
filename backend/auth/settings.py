@@ -114,6 +114,9 @@ REST_FRAMEWORK = {
 # 1) FRED API 키 (환경변수 또는 .env 에 설정)
 FRED_API_KEY = os.environ.get('FRED_API_KEY', '6335426c3b0d7423815d6ca3068b1a7f')
 
+# VWorld(공간정보 오픈플랫폼) 인증키 — 필지(연속지적) 조회 프록시에서 사용
+VWORLD_KEY = os.environ.get('VWORLD_KEY', '60F47693-5E7D-37C4-B609-0A71EEC0DF27')
+
 # 2) 캐시 백엔드 (간단히 메모리 캐시; 필요시 Redis 등으로 교체)
 CACHES = {
     'default': {
@@ -185,6 +188,14 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# Media files (업로드된 성과물 이미지/PDF 등)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# 대용량 이미지/PDF 업로드 허용 (기본 2.5MB → 25MB)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field

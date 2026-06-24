@@ -612,15 +612,15 @@ function QuestionBlock({
           {
             key: "1",
             styles: {
-              header: { padding: "0.5rem", alignItems: "flex-start" },
+              header: { padding: "0.25rem", alignItems: "center" },
               body: { padding: "0.5rem" },
             },
             label: (
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
-                <span style={{ fontSize: 11, color: "#6b7280", flex: "0 0 auto" }}>
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", justifyItems: "center" }}>
+                <span style={{ fontSize: 12, color: "#6b7280", flex: "0 0 auto" }}>
                   {question.qnumber}번
                 </span>
-                <span style={{ fontSize: 11, fontWeight: 500, color: "#111827", lineHeight: 1.5 }}>
+                <span style={{ fontSize: 12, fontWeight: 500, color: "#111827", lineHeight: 1.5 }}>
                   {question.qtext}
                 </span>
               </div>

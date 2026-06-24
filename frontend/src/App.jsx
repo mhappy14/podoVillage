@@ -12,6 +12,7 @@ import StudyTable1 from './components/StudyTable1';
 import StudyTable2 from './components/StudyTable2';
 import StudyTable3 from './components/StudyTable3';
 import StudyTable4 from './components/StudyTable4';
+import StudyScope from './components/StudyScope';
 import StudyView from './components/StudyView';
 import StudyEdit from './components/StudyEdit';
 import StudyWrite from './components/StudyWrite';
@@ -21,6 +22,9 @@ import PaperView from './components/PaperView';
 import PaperEdit from './components/PaperEdit';
 import Art from './components/Art';
 import Place from './components/Place';
+import PlaceUpload from './components/PlaceUpload';
+import PlaceSiteDetail from './components/PlaceSiteDetail';
+import PlaceMine from './components/PlaceMine';
 import Wiki from './components/Wiki';
 import WikiView from './components/WikiView';
 import WikiVersionList from './components/WikiVersionList';
@@ -83,6 +87,7 @@ function App() {
                   <Route path="/study/table2" element={<StudyTable2 />} />
                   <Route path="/study/table3" element={<StudyTable3 />} />
                   <Route path="/study/table4" element={<StudyTable4 />} />
+                  <Route path="/study/scope" element={<StudyScope />} />
                   <Route path="/study/write" element={<StudyWrite />} />
                   <Route path="/study/view/:id" element={<StudyView />} />
                   <Route path="/study/edit/:id" element={<StudyEdit />} />
@@ -93,6 +98,10 @@ function App() {
                   <Route path="/paper/edit/:id" element={<PaperEdit />} />
                   <Route path="/art" element={<Art />} />
                   <Route path="/place" element={<Place />} />
+                  <Route path="/place/new" element={<PlaceUpload />} />
+                  <Route path="/place/edit/:id" element={<PlaceUpload />} />
+                  <Route path="/place/site/:id" element={<PlaceSiteDetail />} />
+                  <Route path="/place/mine" element={<PlaceMine />} />
                   <Route path="/invest" element={<Invest />} />
                   <Route path="/mypage" element={<Mypage />} />
                 </Route>

@@ -15,6 +15,8 @@ from .views import (
     WikiPageViewSet,
     UserFormulaViewset,
     parse_exam_pdf,
+    ProjectSiteViewSet,
+    vworld_parcel,
 )
 
 # 투자지표 관련 뷰 import
@@ -30,6 +32,7 @@ from app.views_invest import (
     indicator_history,
     stock_indicators,
     parse_exam_pdf,
+    parse_scope_pdf,
 )
 
 router = DefaultRouter()
@@ -60,7 +63,11 @@ router.register('wiki', WikiPageViewSet, basename='wiki')
 # 사용자 정의 공식 (Inv_indicator)
 router.register('invest/formulas', UserFormulaViewset, basename='user-formula')
 
+# 필지(대상지) 기반 성과물 (조경·도시·건축 학생)
+router.register('place/sites', ProjectSiteViewSet, basename='place-site')
+
 urlpatterns = router.urls + [
+    path('place/parcel/', vworld_parcel, name='place-parcel'),
     path('fred/', fred_proxy, name='fred-proxy'),
     path('stock/<str:symbol>/', stock_history, name='stock-history'),
     path('invest/stock-history/<str:symbol>/', stock_history, name='invest-stock-history'),
@@ -74,4 +81,5 @@ urlpatterns = router.urls + [
     path('invest/indicator-history/',   indicator_history,  name='invest-indicator-history'),
     path('invest/stock-indicators/<str:symbol>/', stock_indicators, name='invest-stock-indicators'),
     path('parse-exam-pdf/', parse_exam_pdf, name='parse-exam-pdf'),
+    path('parse-scope-pdf/', parse_scope_pdf, name='parse-scope-pdf'),
 ]

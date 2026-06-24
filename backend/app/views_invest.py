@@ -1624,3 +1624,119 @@ def parse_exam_pdf(request):
             {"error": f"PDF 파싱 실패: {str(e)}"},
             status=500,
         )
+
+
+# =====================================================================
+# POST /parse-scope-pdf/  (multipart/form-data, file=pdf)
+# 기술사 "출제기준" PDF → 필기시험의 주요항목/세부항목 파싱 (면접은 무시)
+# 응답: {
+#   detected: { examname },
+#   exam_subject: "필기과목명 ...",
+#   major_items: [ { name, details: [..] }, ... ]   # 보통 7개
+# }
+# pdfplumber 의 표(table) 추출을 사용한다(테두리가 있는 정형 표).
+# =====================================================================
+def _scope_clean(s):
+    """셀 텍스트 정리 — 줄바꿈 제거 + 공백 압축"""
+    if not s:
+        return ""
+    s = s.replace("\n", "")
+    s = _re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _scope_strip_num(s):
+    """앞쪽 'N. ' 번호 접두 제거 (예: '1. 조경계획' → '조경계획')"""
+    return _re.sub(r"^\s*\d+\.\s*", "", s).strip()
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def parse_scope_pdf(request):
+    """기술사 출제기준 PDF 업로드 → 필기 주요항목/세부항목 파싱"""
+    f = request.FILES.get("file")
+    if not f:
+        return JsonResponse({"error": "file 파라미터가 필요합니다."}, status=400)
+
+    try:
+        import pdfplumber
+    except ImportError:
+        return JsonResponse(
+            {"error": "백엔드에 pdfplumber 가 설치되지 않았습니다. `pip install pdfplumber` 실행 후 재시도하세요."},
+            status=500,
+        )
+
+    try:
+        f.seek(0)
+    except Exception:
+        pass
+    raw = f.read()
+    if not raw:
+        return JsonResponse({"error": "업로드된 파일 내용이 비어있습니다."}, status=400)
+
+    bio = io.BytesIO(raw)
+
+    try:
+        all_text = ""
+        major = {}          # 주요항목명 → 세부항목 list
+        order = []          # 주요항목 등장 순서
+        subjects = []       # 필기과목명 후보들
+
+        with pdfplumber.open(bio) as pdf:
+            for page in pdf.pages:
+                all_text += (page.extract_text() or "") + "\n"
+                table = page.extract_table()
+                if not table or len(table) < 2:
+                    continue
+                # 헤더 1열로 필기/면접 구분 — '필기과목명' 페이지만 사용
+                header0 = _scope_clean(table[0][0])
+                if header0 != "필기과목명":
+                    continue
+                cur = None
+                for row in table[1:]:
+                    # row 길이 방어
+                    c0 = _scope_clean(row[0]) if len(row) > 0 else ""
+                    c1 = _scope_clean(row[1]) if len(row) > 1 else ""
+                    c2 = _scope_clean(row[2]) if len(row) > 2 else ""
+                    if c0:
+                        subjects.append(c0)
+                    if c1:
+                        cur = _scope_strip_num(c1)
+                        if cur and cur not in major:
+                            major[cur] = []
+                            order.append(cur)
+                    if c2 and cur:
+                        major[cur].append(_scope_strip_num(c2))
+
+        # 시험명(종목) 추출
+        sub_m = _re.search(
+            r"(조경기술사|도시계획기술사|건축[가-힣]*기술사|토목[가-힣]*기술사|[가-힣]{2,10}기술사)",
+            all_text,
+        )
+        # 필기과목명 — 가장 긴(가장 완전한) 후보 사용
+        exam_subject = max(subjects, key=len) if subjects else ""
+
+        major_items = [{"name": n, "details": major[n]} for n in order]
+
+        if not major_items:
+            return JsonResponse(
+                {
+                    "error": "출제기준(필기)의 주요항목을 인식하지 못했습니다. 표 형식 PDF 인지 확인하세요.",
+                    "detected": {"examname": sub_m.group(1) if sub_m else None},
+                    "exam_subject": exam_subject,
+                    "major_items": [],
+                },
+                status=200,
+            )
+
+        return JsonResponse({
+            "detected": {"examname": sub_m.group(1) if sub_m else None},
+            "exam_subject": exam_subject,
+            "major_items": major_items,
+        })
+    except Exception as e:
+        logger.error("parse_scope_pdf 실패: %s", e, exc_info=True)
+        return JsonResponse(
+            {"error": f"PDF 파싱 실패: {str(e)}"},
+            status=500,
+        )

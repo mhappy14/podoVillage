@@ -634,3 +634,104 @@ class UserFormula(models.Model):
 
     def __str__(self):
         return f"[{self.user_id}] {self.name}"
+
+
+# =====================================================================
+# ProjectSite — 필지(대상지) 기반 설계·계획 성과물
+# ---------------------------------------------------------------------
+# 조경·도시계획·건축 전공 학생이 지도에서 공원부지/유휴부지 등 대상지를
+# 선택(연속지적 필지 자동인식 또는 직접 영역 그리기)하고, 그 대상지에 대한
+# 본인의 설계·계획안(이미지·PDF·설명·외부링크)을 업로드한다.
+# 공원·녹지 담당 공무원 등 열람자는 지도를 탐색하며 업로드된 성과물을
+# 열람하고 대상지별 인사이트를 얻는다.
+#
+# PostGIS 미사용 환경이므로 geometry 는 GeoJSON(JSONField)으로 저장하고,
+# 지도 마커/목록용으로 center_lat/lng 를 별도 보관한다.
+# =====================================================================
+
+class ProjectSite(models.Model):
+    CATEGORY = (
+        ("landscape",    "조경"),
+        ("urban",        "도시계획·설계"),
+        ("architecture", "건축"),
+        ("etc",          "기타"),
+    )
+    SITE_TYPE = (
+        ("park",  "공원부지"),
+        ("idle",  "유휴부지"),
+        ("green", "녹지"),
+        ("etc",   "기타"),
+    )
+    GEOM_SOURCE = (
+        ("parcel", "필지 자동인식"),
+        ("draw",   "직접 그리기"),
+    )
+    STATUS = (
+        ("published", "공개"),
+        ("draft",     "비공개(작성중)"),
+    )
+
+    nickname = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, related_name="project_sites"
+    )
+    title       = models.CharField(max_length=300)
+    category    = models.CharField(max_length=20, choices=CATEGORY,  default="landscape")
+    site_type   = models.CharField(max_length=20, choices=SITE_TYPE, default="park")
+    status      = models.CharField(max_length=12, choices=STATUS,    default="published")
+
+    # 설계·계획 내용
+    summary      = models.CharField(max_length=500, blank=True, default="")  # 한 줄 개요
+    description  = models.TextField(blank=True, default="")                   # 상세 계획·설계 설명
+    external_link = models.URLField(max_length=2000, blank=True, default="")  # 포트폴리오/영상 등
+
+    # 대상지(필지/영역) 정보
+    # 여러 필지를 한 번에 선택하면 PNU/지번/주소가 구분자로 이어져 길어지므로 TextField 사용
+    pnu      = models.TextField(blank=True, default="")  # 필지 고유번호(PNU). 다중 선택 시 콤마로 연결
+    jibun    = models.TextField(blank=True, default="")  # 지번. 다중 선택 시 ' / ' 로 연결
+    address  = models.TextField(blank=True, default="")  # 주소(도로명/지번). 다중 선택 시 ' / ' 로 연결
+    geometry = models.JSONField(null=True, blank=True)                   # GeoJSON geometry
+    geometry_source = models.CharField(max_length=10, choices=GEOM_SOURCE, default="parcel")
+    center_lat = models.FloatField(null=True, blank=True)
+    center_lng = models.FloatField(null=True, blank=True)
+    area_sqm   = models.FloatField(null=True, blank=True)  # 면적(㎡)
+
+    like = models.ManyToManyField(User, blank=True, related_name="like_project_site")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["category"], name="app_project_categor_idx"),
+            models.Index(fields=["site_type"], name="app_project_site_ty_idx"),
+            models.Index(fields=["-created_at"], name="app_project_created_idx"),
+        ]
+        verbose_name = "대상지 성과물"
+        verbose_name_plural = "대상지 성과물"
+
+    @property
+    def like_count(self):
+        return self.like.count()
+
+    def __str__(self):
+        return f"{self.title} ({self.get_category_display()})"
+
+
+class SiteFile(models.Model):
+    KIND = (
+        ("image", "이미지"),
+        ("pdf",   "PDF"),
+        ("file",  "파일"),
+    )
+    site     = models.ForeignKey(ProjectSite, on_delete=models.CASCADE, related_name="files")
+    file     = models.FileField(upload_to="project_sites/%Y/%m/")
+    kind     = models.CharField(max_length=10, choices=KIND, default="image")
+    caption  = models.CharField(max_length=300, blank=True, default="")
+    order    = models.PositiveSmallIntegerField(default=0)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return f"[{self.kind}] {self.file.name}"

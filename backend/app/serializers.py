@@ -568,3 +568,89 @@ class UserFormulaSerializer(serializers.ModelSerializer):
         if len(v) > 2000:
             raise serializers.ValidationError("표시식이 너무 깁니다 (최대 2000자).")
         return v
+
+# =====================================================================
+# ProjectSite / SiteFile — 필지(대상지) 기반 성과물
+# =====================================================================
+
+class SiteFileSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SiteFile
+        fields = ['id', 'file', 'file_url', 'kind', 'caption', 'order', 'uploaded_at']
+        read_only_fields = ['id', 'uploaded_at', 'file_url']
+        extra_kwargs = {'file': {'write_only': True, 'required': False}}
+
+    def get_file_url(self, obj):
+        if not obj.file:
+            return None
+        request = self.context.get('request')
+        url = obj.file.url
+        return request.build_absolute_uri(url) if request else url
+
+
+class ProjectSiteSerializer(serializers.ModelSerializer):
+    files = SiteFileSerializer(many=True, read_only=True)
+    nickname = UserSerializer(read_only=True)
+    like_count = serializers.ReadOnlyField()
+    is_liked = serializers.SerializerMethodField()
+    is_owner = serializers.SerializerMethodField()
+    category_label = serializers.CharField(source='get_category_display', read_only=True)
+    site_type_label = serializers.CharField(source='get_site_type_display', read_only=True)
+
+    class Meta:
+        model = ProjectSite
+        fields = [
+            'id', 'title', 'category', 'category_label', 'site_type', 'site_type_label',
+            'status', 'summary', 'description', 'external_link',
+            'pnu', 'jibun', 'address', 'geometry', 'geometry_source',
+            'center_lat', 'center_lng', 'area_sqm',
+            'nickname', 'files', 'like_count', 'is_liked', 'is_owner',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'nickname', 'files', 'like_count', 'is_liked', 'is_owner',
+            'created_at', 'updated_at',
+        ]
+
+    def get_is_liked(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.like.filter(id=request.user.id).exists()
+        return False
+
+    def get_is_owner(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.nickname_id == request.user.id
+        return False
+
+
+class ProjectSiteListSerializer(serializers.ModelSerializer):
+    """지도/목록용 경량 시리얼라이저 (대표 이미지 1장 포함)."""
+    nickname_name = serializers.SerializerMethodField()
+    category_label = serializers.CharField(source='get_category_display', read_only=True)
+    site_type_label = serializers.CharField(source='get_site_type_display', read_only=True)
+    thumbnail = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProjectSite
+        fields = [
+            'id', 'title', 'category', 'category_label', 'site_type', 'site_type_label',
+            'summary', 'jibun', 'address', 'geometry', 'geometry_source',
+            'center_lat', 'center_lng', 'area_sqm', 'nickname_name', 'thumbnail',
+            'created_at',
+        ]
+
+    def get_nickname_name(self, obj):
+        if obj.nickname:
+            return obj.nickname.nickname or obj.nickname.username or obj.nickname.email
+        return None
+
+    def get_thumbnail(self, obj):
+        img = obj.files.filter(kind='image').order_by('order', 'id').first()
+        if not img or not img.file:
+            return None
+        request = self.context.get('request')
+        return request.build_absolute_uri(img.file.url) if request else img.file.url

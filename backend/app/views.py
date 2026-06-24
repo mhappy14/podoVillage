@@ -633,3 +633,350 @@ class UserFormulaViewset(viewsets.ModelViewSet):
         if serializer.instance.user_id != self.request.user.id:
             raise PermissionDenied("본인 공식만 수정할 수 있습니다.")
         serializer.save()
+
+
+# =====================================================================
+# ProjectSite — 필지(대상지) 기반 성과물 (조경·도시·건축 학생 성과물)
+# ---------------------------------------------------------------------
+# 업로드(생성/수정/삭제): 로그인 사용자, 본인 글만 수정/삭제
+# 열람(목록/상세/지도): 누구나(비로그인 포함)
+# =====================================================================
+import json as _json
+import math as _math
+from django.conf import settings as _settings
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.exceptions import PermissionDenied
+
+
+def _ring_centroid_area(ring):
+    """GeoJSON 링([[lng,lat],...]) 의 centroid(lng,lat)와 부호있는 면적(deg^2)."""
+    n = len(ring)
+    if n < 3:
+        xs = [p[0] for p in ring] or [0]
+        ys = [p[1] for p in ring] or [0]
+        return sum(xs) / len(xs), sum(ys) / len(ys), 0.0
+    a = cx = cy = 0.0
+    for i in range(n - 1):
+        x0, y0 = ring[i][0], ring[i][1]
+        x1, y1 = ring[i + 1][0], ring[i + 1][1]
+        cross = x0 * y1 - x1 * y0
+        a += cross
+        cx += (x0 + x1) * cross
+        cy += (y0 + y1) * cross
+    if a == 0:
+        xs = [p[0] for p in ring]
+        ys = [p[1] for p in ring]
+        return sum(xs) / len(xs), sum(ys) / len(ys), 0.0
+    a *= 0.5
+    return cx / (6 * a), cy / (6 * a), a
+
+
+def _polygon_area_m2(rings, lat):
+    """단일 폴리곤(외곽+홀)의 근사 면적(㎡). 위도 기준 등거리 투영 근사."""
+    mlat = 111320.0
+    mlng = 111320.0 * _math.cos(_math.radians(lat))
+    area = 0.0
+    for idx, ring in enumerate(rings):
+        _, _, a = _ring_centroid_area(ring)
+        a_m = abs(a) * mlat * mlng
+        area += a_m if idx == 0 else -a_m
+    return max(area, 0.0)
+
+
+def _geom_center_area(geom):
+    """GeoJSON geometry → (center_lat, center_lng, area_sqm). 실패 시 (None,None,None)."""
+    if not geom or not isinstance(geom, dict):
+        return (None, None, None)
+    t = geom.get('type')
+    coords = geom.get('coordinates')
+    if not coords:
+        return (None, None, None)
+    if t == 'Polygon':
+        polys = [coords]
+    elif t == 'MultiPolygon':
+        polys = coords
+    else:
+        return (None, None, None)
+    total = cxs = cys = total_m2 = 0.0
+    for poly in polys:
+        if not poly or not poly[0]:
+            continue
+        ext = poly[0]
+        cx, cy, a = _ring_centroid_area(ext)
+        w = abs(a)
+        total += w
+        cxs += cx * w
+        cys += cy * w
+        total_m2 += _polygon_area_m2(poly, cy)
+    if total == 0:
+        try:
+            first = polys[0][0][0]
+            return (first[1], first[0], None)
+        except Exception:
+            return (None, None, None)
+    return (cys / total, cxs / total, round(total_m2, 1))
+
+
+class IsSiteOwnerOrReadOnly(permissions.BasePermission):
+    """안전 메서드는 누구나, 쓰기는 로그인+본인(또는 staff)만."""
+
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return bool(request.user and request.user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        if request.user and request.user.is_staff:
+            return True
+        return obj.nickname_id == getattr(request.user, 'id', None)
+
+
+def _detect_kind(filename):
+    name = (filename or '').lower()
+    if name.endswith('.pdf'):
+        return 'pdf'
+    if name.rsplit('.', 1)[-1] in ('jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'):
+        return 'image'
+    return 'file'
+
+
+class ProjectSiteViewSet(viewsets.ModelViewSet):
+    queryset = ProjectSite.objects.all().select_related('nickname').prefetch_related('files')
+    serializer_class = ProjectSiteSerializer
+    permission_classes = [IsSiteOwnerOrReadOnly]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['category', 'site_type', 'status']
+    search_fields = ['title', 'summary', 'description', 'jibun', 'address']
+    ordering_fields = ['created_at', 'updated_at', 'title']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return ProjectSiteListSerializer
+        return ProjectSiteSerializer
+
+    def get_queryset(self):
+        qs = ProjectSite.objects.all().select_related('nickname').prefetch_related('files')
+        # 비공개(draft)는 본인에게만 노출
+        user = self.request.user
+        if user and user.is_authenticated and not user.is_staff:
+            qs = qs.filter(Q(status='published') | Q(nickname=user))
+        elif not (user and user.is_authenticated):
+            qs = qs.filter(status='published')
+        return qs
+
+    def _parse_geometry(self, raw):
+        if raw is None or raw == '':
+            return None
+        if isinstance(raw, (dict, list)):
+            return raw
+        try:
+            return _json.loads(raw)
+        except (ValueError, TypeError):
+            return None
+
+    def _save_files(self, site, request, start_order=0):
+        files = request.FILES.getlist('files')
+        captions = request.data.getlist('captions') if hasattr(request.data, 'getlist') else []
+        for i, f in enumerate(files):
+            SiteFile.objects.create(
+                site=site,
+                file=f,
+                kind=_detect_kind(getattr(f, 'name', '')),
+                caption=captions[i] if i < len(captions) else '',
+                order=start_order + i,
+            )
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        data = {k: v for k, v in request.data.items() if k not in ('geometry', 'files', 'captions')}
+        serializer = ProjectSiteSerializer(data=data, context=self.get_serializer_context())
+        serializer.is_valid(raise_exception=True)
+
+        geometry = self._parse_geometry(request.data.get('geometry'))
+        lat, lng, area = _geom_center_area(geometry)
+        save_kwargs = {'nickname': request.user, 'geometry': geometry}
+        # 프론트가 center/area 를 직접 보냈으면 우선, 없으면 계산값 사용
+        if request.data.get('center_lat') in (None, ''):
+            save_kwargs['center_lat'] = lat
+        if request.data.get('center_lng') in (None, ''):
+            save_kwargs['center_lng'] = lng
+        if request.data.get('area_sqm') in (None, '') and area is not None:
+            save_kwargs['area_sqm'] = area
+
+        site = serializer.save(**save_kwargs)
+        self._save_files(site, request)
+        out = ProjectSiteSerializer(site, context=self.get_serializer_context())
+        return Response(out.data, status=status.HTTP_201_CREATED)
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        data = {k: v for k, v in request.data.items() if k not in ('geometry', 'files', 'captions')}
+        serializer = ProjectSiteSerializer(
+            instance, data=data, partial=partial, context=self.get_serializer_context()
+        )
+        serializer.is_valid(raise_exception=True)
+
+        save_kwargs = {}
+        if 'geometry' in request.data:
+            geometry = self._parse_geometry(request.data.get('geometry'))
+            lat, lng, area = _geom_center_area(geometry)
+            save_kwargs.update(geometry=geometry, center_lat=lat, center_lng=lng)
+            if area is not None:
+                save_kwargs['area_sqm'] = area
+        site = serializer.save(**save_kwargs)
+        # 새 파일이 함께 오면 추가
+        if request.FILES.getlist('files'):
+            existing = site.files.count()
+            self._save_files(site, request, start_order=existing)
+        out = ProjectSiteSerializer(site, context=self.get_serializer_context())
+        return Response(out.data)
+
+    def perform_create(self, serializer):
+        serializer.save(nickname=self.request.user)
+
+    @action(detail=True, methods=['post'], url_path='upload',
+            parser_classes=[MultiPartParser, FormParser])
+    def upload(self, request, pk=None):
+        site = self.get_object()
+        if not (request.user.is_staff or site.nickname_id == request.user.id):
+            raise PermissionDenied("본인 성과물에만 파일을 추가할 수 있습니다.")
+        existing = site.files.count()
+        self._save_files(site, request, start_order=existing)
+        out = ProjectSiteSerializer(site, context=self.get_serializer_context())
+        return Response(out.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['delete'], url_path=r'files/(?P<file_id>[0-9]+)')
+    def delete_file(self, request, pk=None, file_id=None):
+        site = self.get_object()
+        if not (request.user.is_staff or site.nickname_id == request.user.id):
+            raise PermissionDenied("본인 성과물의 파일만 삭제할 수 있습니다.")
+        sf = get_object_or_404(SiteFile, pk=file_id, site=site)
+        sf.file.delete(save=False)
+        sf.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def like(self, request, pk=None):
+        site = self.get_object()
+        user = request.user
+        if site.like.filter(id=user.id).exists():
+            site.like.remove(user)
+            liked = False
+        else:
+            site.like.add(user)
+            liked = True
+        return Response({'is_liked': liked, 'like_count': site.like.count()})
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def mine(self, request):
+        qs = ProjectSite.objects.filter(nickname=request.user).prefetch_related('files')
+        page = self.paginate_queryset(qs)
+        ser = ProjectSiteListSerializer(
+            page if page is not None else qs, many=True,
+            context=self.get_serializer_context(),
+        )
+        if page is not None:
+            return self.get_paginated_response(ser.data)
+        return Response(ser.data)
+
+    @action(detail=False, methods=['get'])
+    def geojson(self, request):
+        """지도 오버레이용 FeatureCollection."""
+        qs = self.filter_queryset(self.get_queryset())
+        features = []
+        for s in qs:
+            if not s.geometry:
+                continue
+            features.append({
+                'type': 'Feature',
+                'geometry': s.geometry,
+                'properties': {
+                    'id': s.id,
+                    'title': s.title,
+                    'category': s.category,
+                    'category_label': s.get_category_display(),
+                    'site_type': s.site_type,
+                    'site_type_label': s.get_site_type_display(),
+                    'center_lat': s.center_lat,
+                    'center_lng': s.center_lng,
+                },
+            })
+        return Response({'type': 'FeatureCollection', 'features': features})
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def vworld_parcel(request):
+    """
+    좌표(lat,lng)가 포함된 연속지적 필지(LP_PA_CBND_BUBUN)를 VWorld Data API 로
+    조회해 PNU·지번·geometry 를 반환한다. (서버 프록시 — 도메인/CORS 회피)
+    """
+    try:
+        lat = float(request.GET.get('lat'))
+        lng = float(request.GET.get('lng'))
+    except (TypeError, ValueError):
+        return Response({'error': 'lat/lng 파라미터가 필요합니다.'}, status=400)
+
+    key = getattr(_settings, 'VWORLD_KEY', '')
+    if not key:
+        return Response(
+            {'found': False, 'error': 'VWORLD_KEY 가 설정되지 않았습니다. (서버 환경변수 확인)'},
+            status=500,
+        )
+    params = {
+        'service': 'data',
+        'request': 'GetFeature',
+        'data': 'LP_PA_CBND_BUBUN',
+        'key': key,
+        'domain': request.GET.get('domain', 'http://localhost:5173'),
+        'geomFilter': f'POINT({lng} {lat})',
+        'geometry': 'true',
+        'attribute': 'true',
+        'crs': 'EPSG:4326',
+        'format': 'json',
+        'size': '1',
+    }
+    try:
+        r = requests.get('https://api.vworld.kr/req/data', params=params, timeout=10)
+        r.raise_for_status()
+        payload = r.json()
+    except (requests.RequestException, ValueError) as e:
+        return Response({'found': False, 'error': f'VWorld 요청 실패: {e}'}, status=502)
+
+    # VWorld 응답 상태 확인: 인증/도메인/권한 오류를 '필지 없음' 으로 가리지 않는다.
+    resp = payload.get('response', {}) if isinstance(payload, dict) else {}
+    status_val = (resp.get('status') or '').upper()
+
+    if status_val == 'ERROR':
+        err = resp.get('error', {}) or {}
+        code = err.get('code') or err.get('level') or ''
+        text = err.get('text') or err.get('message') or '알 수 없는 오류'
+        msg = f'VWorld 인증/요청 오류({code}): {text}. 키의 Data(데이터) API 사용권한과 등록 도메인을 확인하세요.'
+        return Response({'found': False, 'error': msg, 'vworld_status': status_val}, status=502)
+
+    if status_val == 'NOT_FOUND':
+        return Response({'found': False, 'detail': '해당 위치의 필지를 찾지 못했습니다.'})
+
+    try:
+        feature = resp['result']['featureCollection']['features'][0]
+        props = feature.get('properties', {})
+        geometry = feature.get('geometry')
+        lat_c, lng_c, area = _geom_center_area(geometry)
+        return Response({
+            'found': True,
+            'pnu': props.get('pnu', ''),
+            'jibun': props.get('jibun', ''),
+            'addr': props.get('addr', '') or props.get('ag_geom', ''),
+            'geometry': geometry,
+            'center_lat': lat_c,
+            'center_lng': lng_c,
+            'area_sqm': area,
+            'properties': props,
+        })
+    except (KeyError, IndexError, TypeError):
+        return Response({'found': False, 'detail': '해당 위치의 필지를 찾지 못했습니다.'})
