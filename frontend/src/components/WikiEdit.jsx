@@ -1,12 +1,9 @@
 // src/WikiEdit.jsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Typography, Tabs, Space, Spin, Alert, message } from 'antd';
+import { Typography, Spin, Alert, message } from 'antd';
 import AxiosInstance from './AxiosInstance';
-import WikiForm from './WikiForm';
-import WikiGuide from './WikiGuide';
-import DOMPurify from 'dompurify';
-import parseWikiSyntax from './WikiParser';
+import WikiEditTabs from './WikiEditTabs';
 
 export default function WikiEdit() {
   const location = useLocation();
@@ -95,11 +92,6 @@ export default function WikiEdit() {
     }
   };
 
-  const previewHtml = useMemo(() => {
-    const raw = parseWikiSyntax(content || '');
-    return DOMPurify.sanitize(raw);
-  }, [content]);
-
   if (!isLoggedIn || !allowedByState) return null;
   if (loading) return <Spin size="large" style={{ marginTop: '2rem' }} />;
   if (error) return <Alert message={error} type="error" showIcon style={{ marginTop: '2rem' }} />;
@@ -110,41 +102,11 @@ export default function WikiEdit() {
         문서 수정: {title}
       </Typography.Title>
 
-      <Tabs
-        defaultActiveKey="edit"
-        items={[
-          {
-            key: 'edit',
-            label: '편집',
-            children: (
-              <WikiForm
-                initialValues={{ content }}
-                onFinish={handleSubmit}
-                loading={submitting}
-                onValuesChange={(_, values) => {
-                  if (Object.prototype.hasOwnProperty.call(values, 'content')) {
-                    setContent(values.content ?? '');
-                  }
-                }}
-                hideTitle
-              />
-            ),
-          },
-          {
-            key: 'preview',
-            label: '미리보기',
-            children: (
-              <Space direction="vertical" style={{ width: '100%' }}>
-                <div className="wiki-body wiki-preview" dangerouslySetInnerHTML={{ __html: previewHtml }} />
-              </Space>
-            ),
-          },
-          {
-            key: 'guide',
-            label: '문법 도움말',
-            children: <WikiGuide />,
-          },
-        ]}
+      <WikiEditTabs
+        content={content}
+        onContentChange={setContent}
+        onFinish={handleSubmit}
+        submitting={submitting}
       />
     </>
   );

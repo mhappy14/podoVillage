@@ -1,3 +1,306 @@
+/* ===========================================================
+   App1.css에서 이전: 위키 페이지 레이아웃/검색
+   =========================================================== */
+.wiki-inline-search { display: none; }
+
+@media (min-width: 720px) {
+  .wiki-inline-search {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+  .wiki-inline-search input {
+    width: 150%;               
+    height: 32px;                  /* 네비 라인 높이에 맞추기 (필요시 36/40 등 조정) */
+    border: 1px solid #d9d9d9;
+    font-size: 0.9rem;
+    padding: 0 8px;
+    outline: none;
+  }
+  .wiki-inline-search button {
+    height: 32px;                  /* 라인 높이 동일 */
+    border: 1px solid #d9d9d9;
+    font-size: 0.9rem;
+    background: #f5f5f5;
+    cursor: pointer;
+    padding: 0 10px;               /* 텍스트 들어갈 정도만 */
+    white-space: nowrap;
+  }
+}
+
+/* 넓은 화면에서는 위키 상단 전폭 검색바를 숨김 */
+@media (min-width: 720px) {
+  .wiki-top-search { display: none !important; }
+}
+
+/* 600px 이하에서는 전폭 검색바 보여주기 */
+@media (max-width: 719.98px) {
+  .wiki-top-search { display: block; }
+}
+
+@media (min-width: 720px) {
+  .contents-wiki {
+    max-width: 1248px;
+    margin: 0 auto;
+    margin-top: 2.9rem;
+    width: 100%;
+  }
+}
+
+@media (max-width: 719.98px) {
+  .contents-wiki {
+    max-width: 1248px;
+    margin: 0 auto;
+    margin-top: 1.9rem;
+    width: 100%;
+  }
+}
+
+
+.wiki-preview table { width: 100%; border-collapse: collapse; }
+.wiki-preview table td, .wiki-preview table th { padding: 6px 8px; }
+.wiki-preview .nm-sec summary { cursor: pointer; list-style: none; }
+.wiki-preview .nm-sec summary::-webkit-details-marker { display: none; }
+
+.contents-wiki .ant-typography a.wiki-title-link {
+  color: inherit;
+  text-decoration: black;
+}
+
+.contents-wiki .ant-typography a.wiki-title-link:hover {
+  text-decoration: underline;
+}
+
+/* ===========================================================
+   App1.css에서 이전: 위키 섹션(nm-sec) 기본
+   =========================================================== */
+.nm-sec summary { cursor: pointer; list-style: none; }
+.nm-sec summary::-webkit-details-marker { display: none; }
+.nm-sec .nm-sec-title { display: inline; margin: 0; }
+.nm-sec .secno { font-weight: 600; margin-right: .25rem; }
+.nm-sec-body { margin: .25rem 0 .75rem 0; }
+
+/* ===========================================================
+   나무위키 스타일 위키 본문 (.wiki-body)
+   =========================================================== */
+.wiki-body {
+  font-size: 15px;
+  line-height: 1.7;
+  color: #212529;
+  word-break: break-word;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic",
+    "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+}
+
+.wiki-body p {
+  margin: 0.35em 0;
+}
+
+/* 링크 */
+.wiki-body a {
+  color: #0275d8;
+  text-decoration: none;
+}
+.wiki-body a:hover {
+  text-decoration: underline;
+}
+
+/* ---- 섹션 제목 (== ~ ======) ---- */
+.wiki-body .nm-sec {
+  margin: 0.5em 0 0;
+}
+.wiki-body .nm-sec-body {
+  margin: 0.6em 0 0 0;
+}
+.wiki-body summary {
+  list-style: none;
+  cursor: pointer;
+  outline: none;
+}
+.wiki-body summary::-webkit-details-marker {
+  display: none;
+}
+
+.wiki-body .nm-sec-title {
+  margin: 0;
+  padding-bottom: 3px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.wiki-body h2.nm-sec-title { font-size: 1.55em; border-bottom: 2px solid #e0e0e0; }
+.wiki-body h3.nm-sec-title { font-size: 1.35em; border-bottom: 1px solid #e6e6e6; }
+.wiki-body h4.nm-sec-title { font-size: 1.2em; }
+.wiki-body h5.nm-sec-title { font-size: 1.08em; }
+.wiki-body h6.nm-sec-title { font-size: 1em; }
+
+.wiki-body .secno {
+  color: #888;
+  font-weight: 400;
+  font-size: 0.85em;
+  margin-right: 0.35em;
+}
+
+/* 접기/펼치기 표시 */
+.wiki-body .nm-sec > summary .nm-sec-title::after {
+  content: "[접기]";
+  margin-left: 0.5em;
+  font-size: 0.6em;
+  font-weight: 400;
+  color: #999;
+  vertical-align: middle;
+}
+.wiki-body .nm-sec:not([open]) > summary .nm-sec-title::after {
+  content: "[펼치기]";
+}
+
+/* ---- 목차 ---- */
+.wiki-body .nm-toc {
+  display: inline-block;
+  min-width: 220px;
+  max-width: 100%;
+  border: 1px solid #ddd;
+  background: #fafafa;
+  padding: 8px 14px 8px 10px;
+  margin: 12px 0;
+  font-size: 0.92em;
+}
+.wiki-body .nm-toc-title {
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 4px;
+}
+.wiki-body .nm-toc ul {
+  list-style: none;
+  margin: 0;
+  padding-left: 1.1em;
+}
+.wiki-body .nm-toc > ul {
+  padding-left: 0.4em;
+}
+.wiki-body .nm-toc li {
+  margin: 1px 0;
+}
+
+/* ---- 표 ---- */
+.wiki-body .nm-table {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  border: 2px solid #c0c0c0;
+  font-size: 0.95em;
+}
+.wiki-body .nm-table td,
+.wiki-body .nm-table th {
+  border: 1px solid #c8c8c8;
+  padding: 5px 8px;
+  vertical-align: middle;
+}
+
+/* ---- 리스트 ---- */
+.wiki-body ul,
+.wiki-body ol {
+  margin: 0.3em 0;
+  padding-left: 1.5em;
+}
+.wiki-body li {
+  margin: 2px 0;
+  padding-left: 0;
+}
+
+/* ---- 인용문 ---- */
+.wiki-body .nm-quote {
+  border-left: 3px solid #ccc;
+  background: #f8f9fa;
+  margin: 0.6em 0;
+  padding: 0.5em 1em;
+  color: #444;
+}
+
+/* ---- 수평선 ---- */
+.wiki-body hr {
+  border: 0;
+  border-top: 1px solid #ddd;
+  margin: 0.9em 0;
+}
+
+/* ---- 코드 ---- */
+.wiki-body code {
+  background: #f2f2f2;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 0.9em;
+  font-family: Consolas, Monaco, "D2Coding", monospace;
+}
+.wiki-body pre {
+  background: #f6f8fa;
+  border: 1px solid #e1e4e8;
+  border-radius: 4px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 0.6em 0;
+}
+.wiki-body pre code {
+  background: none;
+  padding: 0;
+}
+
+/* ---- 분류 / 틀 ---- */
+.wiki-body .nm-category {
+  display: inline-block;
+  font-size: 0.85em;
+  color: #888;
+  margin-right: 0.4em;
+}
+.wiki-body .nm-template {
+  color: #999;
+  font-size: 0.9em;
+}
+
+/* ---- 각주 ---- */
+.wiki-body sup a {
+  color: #0275d8;
+  font-size: 0.8em;
+}
+.wiki-body .footnotes {
+  margin-top: 1.5em;
+  padding-top: 0.6em;
+  border-top: 1px solid #e0e0e0;
+  font-size: 0.88em;
+  color: #555;
+}
+.wiki-body .footnotes ol {
+  padding-left: 1.6em;
+}
+.wiki-body .footnotes li {
+  margin: 2px 0;
+}
+.wiki-body .fn-back {
+  margin-left: 4px;
+  text-decoration: none;
+}
+
+/* ---- 리다이렉트 ---- */
+.wiki-body .nm-redirect {
+  border: 1px solid #e0e0e0;
+  background: #f9fafb;
+  padding: 10px 14px;
+}
+
+/* ---- 접기(folding) ---- */
+.wiki-body .nm-fold {
+  border: 1px solid #e0e0e0;
+  margin: 0.6em 0;
+}
+.wiki-body .nm-fold > summary {
+  background: #f5f5f5;
+  padding: 6px 10px;
+  font-weight: 600;
+}
+.wiki-body .nm-fold-body {
+  padding: 8px 12px;
+}
+
 /* === Wiki 전용 공통 스타일 === */
 
 /* 본문 컨테이너(미리보기/뷰 공통) */
@@ -73,3 +376,98 @@
 .wiki-body .footnotes, .wiki-preview .footnotes { margin-top: 1rem; font-size: .92em; }
 .wiki-body .footnotes ol, .wiki-preview .footnotes ol { margin: .25rem 0 .25rem 1.25rem; }
 .wiki-body .footnotes .fn-back, .wiki-preview .footnotes .fn-back { margin-left: .5rem; text-decoration: none; }
+
+
+/* ===========================================================
+   문법 가이드 (WikiGuide.jsx) — index.css에서 이전
+   =========================================================== */
+.wg-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.wg-example {
+  border: 1px solid #eee;
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: #fff;
+}
+.wg-desc {
+  font-size: 13px;
+  color: #555;
+  margin-bottom: 8px;
+}
+.wg-cols {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+.wg-col {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.wg-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #999;
+  letter-spacing: 0.03em;
+  margin-bottom: 4px;
+}
+.wg-code {
+  margin: 0;
+  background: #f6f8fa;
+  border: 1px solid #e1e4e8;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-family: Consolas, Monaco, "D2Coding", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #24292e;
+}
+.wg-result {
+  border: 1px dashed #e1e4e8;
+  border-radius: 4px;
+  padding: 8px 10px;
+  background: #fff;
+  min-height: 100%;
+}
+.wg-result > :first-child {
+  margin-top: 0;
+}
+.wg-result .nm-sec {
+  margin-top: 0.5em;
+}
+
+/* 표 옵션 레퍼런스 */
+.wg-opttable {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+  margin-top: 6px;
+}
+.wg-opttable th,
+.wg-opttable td {
+  border: 1px solid #e0e0e0;
+  padding: 5px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.wg-opttable th {
+  background: #fafafa;
+}
+.wg-opttable code {
+  background: #f2f2f2;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 0.92em;
+  white-space: nowrap;
+}
+
+/* 좁은 화면에서는 입력/결과를 세로로 */
+@media (max-width: 640px) {
+  .wg-cols {
+    flex-direction: column;
+  }
+}

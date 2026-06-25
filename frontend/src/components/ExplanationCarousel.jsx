@@ -22,11 +22,11 @@ import {
   CommentOutlined,
   EditOutlined,
 } from "@ant-design/icons";
-import { Link } from "react-router-dom";
 import DOMPurify from "dompurify";
 import parseWikiSyntax from "./WikiParser";
 import AxiosInstance from "./AxiosInstance";
 import Comments from "./Comments";
+import WikiEditTabs from "./WikiEditTabs";
 
 const { Text } = Typography;
 
@@ -295,12 +295,17 @@ function ExplanationCard({ ex, rank, user }) {
   const [comments, setComments] = useState([]);
   const [comment, setComment] = useState("");
   const [showComments, setShowComments] = useState(false);
+  const [editContent, setEditContent] = useState(ex.explanation || "");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   // ex prop 이 바뀌면 동기화
   useEffect(() => {
     setData(ex);
     setComments([]);
     setShowComments(false);
+    setEditContent(ex.explanation || "");
+    setEditing(false);
   }, [ex.id]);
 
   const isAuthor = user && data?.nickname?.id && user.id === data.nickname.id;
@@ -375,6 +380,23 @@ function ExplanationCard({ ex, rank, user }) {
     }
   };
 
+  // 작성자 인라인 편집 저장 (StudyEdit 이동 없이 카드 안에서 PATCH)
+  const handleInlineSave = async (values) => {
+    const next = values?.content ?? editContent;
+    setSavingEdit(true);
+    try {
+      await AxiosInstance.patch(`explanation/${data.id}/`, { explanation: next });
+      setData((p) => ({ ...p, explanation: next }));
+      setEditContent(next);
+      setEditing(false);
+      message.success("해설이 수정되었습니다.");
+    } catch {
+      message.error("해설 수정 실패");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   return (
     <Card
       size="small"
@@ -393,28 +415,43 @@ function ExplanationCard({ ex, rank, user }) {
           </Text>
         </div>
         {isAuthor && (
-          <Link to={`/study/edit/${data.id}`}>
-            <Button size="small" type="text" icon={<EditOutlined />} />
-          </Link>
+          <Button
+            size="small"
+            type={editing ? "primary" : "text"}
+            icon={<EditOutlined />}
+            onClick={() => setEditing((v) => !v)}
+          />
         )}
       </div>
 
-      <div
-        className="wiki-body"
-        style={{
-          marginTop: "0.25rem",
-          padding: "0.25rem 1rem 0.25rem 1rem",
-          border: "1px solid #f0f0f0",
-          borderRadius: 6,
-          background: "#fafafa",
-          height: "auto",
-          minHeight: 120,
-          overflowY: "visible",
-          fontSize: "0.75rem",
-          lineHeight: 1.6,
-        }}
-        dangerouslySetInnerHTML={{ __html: sanitized }}
-      />
+      {isAuthor && editing ? (
+        <div style={{ marginTop: "0.25rem", fontSize: "0.75rem" }}>
+          <WikiEditTabs
+            content={editContent}
+            onContentChange={setEditContent}
+            onFinish={handleInlineSave}
+            submitting={savingEdit}
+            thirds
+          />
+        </div>
+      ) : (
+        <div
+          className="wiki-body"
+          style={{
+            marginTop: "0.25rem",
+            padding: "0.25rem 1rem 0.25rem 1rem",
+            border: "1px solid #f0f0f0",
+            borderRadius: 6,
+            background: "#fafafa",
+            height: "auto",
+            minHeight: 120,
+            overflowY: "visible",
+            fontSize: "0.75rem",
+            lineHeight: 1.6,
+          }}
+          dangerouslySetInnerHTML={{ __html: sanitized }}
+        />
+      )}
 
       {(data?.mainsubject?.length || data?.detailsubject?.length) ? (
         <div style={{ marginTop: 6 }}>

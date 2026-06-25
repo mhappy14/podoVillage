@@ -8,20 +8,23 @@ import {useForm} from 'react-hook-form'
 import AxiosInstance from './AxiosInstance'
 import { useNavigate } from 'react-router-dom'
 import MyMessage from './Message'
+import { useAuth } from './AuthContext'
 
 const Login = () =>{
 	const navigate = useNavigate()
 	const {handleSubmit, control} = useForm()
   const [ShowMessage, setShowMessage] = useState(false)
+  const { setIsAuthenticated } = useAuth()
 
 	const submission = (data) => {
 		AxiosInstance.post(`login/`,{
-			email: data.email, 
+			email: data.email,
 			password: data.password,
 		})
 		.then((response) => {
 			console.log(response)
 			localStorage.setItem('Token', response.data.token)
+			setIsAuthenticated(true)
 			navigate(`/home`)
 		})
 		.catch((error) => {

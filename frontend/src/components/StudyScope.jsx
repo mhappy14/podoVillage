@@ -36,9 +36,7 @@ const TABLE_CATEGORY = "기술사";
 const FIELD_W = 90;    // 분야 칸 폭
 const ITEM_W = 132;    // 종목 칸 폭
 const LEFT_W = FIELD_W + ITEM_W;
-const HEAD1_H = 26;
-const HEAD2_H = 24;
-const HEAD_H = HEAD1_H + HEAD2_H; // 헤더 전체 높이 (좌/우 동일)
+const HEAD_H = 30; // 헤더 전체 높이 (좌/우 동일)
 const ROW_H = 30;      // 본문 행 높이
 const ROW_LINE = ROW_H - 1;
 
@@ -78,12 +76,6 @@ const loadScopeData = () => {
     /* noop */
   }
   return {};
-};
-
-// 종목의 분야 찾기
-const fieldOf = (item) => {
-  for (const g of FIELDS) if (g.items.includes(item)) return g.field;
-  return "";
 };
 
 const StudyScope = () => {
@@ -136,8 +128,6 @@ const StudyScope = () => {
 
   // 셀렉트 값 → 실제 종목명 (pin: 접두 제거)
   const selectedName = fItem ? fItem.replace(/^pin:/, "") : null;
-
-  const resetFilters = () => setFItem(null);
 
   const isRegistered = (item) => !!scopeData[item];
 
@@ -245,7 +235,7 @@ const StudyScope = () => {
     setVbar(lb.offsetWidth - lb.clientWidth);
     setHbar(rb.offsetHeight - rb.clientHeight);
 
-    const onLeftScroll = () => { rb.scrollTop = lb.scrollTop; };
+    const onLeftScroll = () => { if (!detailModeRef.current) rb.scrollTop = lb.scrollTop; };
     const onRightScroll = () => { hr.scrollLeft = rb.scrollLeft; };
     lb.addEventListener("scroll", onLeftScroll, { passive: true });
     rb.addEventListener("scroll", onRightScroll, { passive: true });
@@ -266,29 +256,40 @@ const StudyScope = () => {
 
   const headCell = { ...cellBase, background: HEAD_BG };
 
-  // ── 상세 보기 모드: 종목 선택 + 출제기준 등록됨 ──
+  // ── 상세 보기 모드: 종목 선택 + 출제기준 등록됨 (우하단에만 적용) ──
   const scope = selectedName ? scopeData[selectedName] : null;
   const detailMode = !!(scope && (scope.major_items || []).length);
-  const majors = detailMode ? scope.major_items.slice(0, SCOPE_COL_COUNT) : [];
-  const numDetailRows = detailMode
-    ? Math.max(1, ...majors.map((m) => (m.details || []).length))
-    : 0;
+  const majors = detailMode ? scope.major_items.slice(0, 18) : [];
 
-  // ── 목록 모드 행 (즐겨찾기 + FIELDS, 셀렉트 필터 적용) ──
+  // 우하단 그리드: 주요항목 개수별 열·행 구성
+  //  ≤6 → 1행 / 7~8 → 2행4열 / 9~10 → 2행5열 / 11~12 → 2행6열 / 13~18 → 3행6열
+  const gridCols = (() => {
+    const n = majors.length;
+    if (n <= 6) return n || 1;
+    if (n <= 8) return 4;
+    if (n <= 10) return 5;
+    return 6;
+  })();
+  const gridRows = Math.ceil(majors.length / gridCols) || 1;
+  const gridPad = gridRows * gridCols - majors.length;
+
+  // 상세 모드에서는 좌/우 행 수가 달라 세로 스크롤 동기화를 끈다.
+  const detailModeRef = useRef(detailMode);
+  useEffect(() => { detailModeRef.current = detailMode; }, [detailMode]);
+
+  // ── 목록 모드 행 (즐겨찾기 + FIELDS) — 좌하단은 항상 전체 목록 유지 ──
   const rows = useMemo(() => {
     const out = [];
-    const pins = selectedName ? pinnedItems.filter((it) => it === selectedName) : pinnedItems;
-    pins.forEach((item, idx) => {
-      out.push({ key: `pin-${item}`, field: "내 종목", item, showField: idx === 0, fieldRowSpan: pins.length, isPinned: true });
+    pinnedItems.forEach((item, idx) => {
+      out.push({ key: `pin-${item}`, field: "내 종목", item, showField: idx === 0, fieldRowSpan: pinnedItems.length, isPinned: true });
     });
     FIELDS.forEach((grp) => {
-      const items = selectedName ? grp.items.filter((it) => it === selectedName) : grp.items;
-      items.forEach((item, idx) => {
-        out.push({ key: `${grp.field}-${item}`, field: grp.field, item, showField: idx === 0, fieldRowSpan: items.length, isPinned: false });
+      grp.items.forEach((item, idx) => {
+        out.push({ key: `${grp.field}-${item}`, field: grp.field, item, showField: idx === 0, fieldRowSpan: grp.items.length, isPinned: false });
       });
     });
     return out;
-  }, [pinnedItems, selectedName]);
+  }, [pinnedItems]);
 
   return (
     <div style={{ padding: "1rem" }}>
@@ -308,7 +309,7 @@ const StudyScope = () => {
             allowClear
             showSearch
             optionFilterProp="label"
-            style={{ width: "100%" }}
+            style={{ width: "50%" }}
           />
         </div>
         <Space style={{ flex: "3 1 0%", justifyContent: "flex-end" }}>
@@ -318,12 +319,11 @@ const StudyScope = () => {
             </Button>
           )}
           <Link to="/study">
-            <Button>시험 보관소</Button>
+            <Button>돌아가기</Button>
           </Link>
           <Link to="/study/table1">
             <Button>기술사 연표</Button>
           </Link>
-          <Button onClick={resetFilters}>필터 초기화</Button>
         </Space>
       </div>
 
@@ -352,18 +352,14 @@ const StudyScope = () => {
               </thead>
             </table>
           </div>
-          {/* 우상단: 1행(병합) 선택 종목명 / 2행 주요항목(또는 1과목~7과목) */}
+          {/* 우상단: 선택 종목명 (단일 행, 좌측 헤더와 동일 높이) */}
           <div ref={headRightRef} style={{ flex: "1 1 auto", overflow: "hidden" }}>
             <table style={{ borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", width: "100%" }}>
-              <colgroup>
-                {SCOPE_COLUMNS.map((c) => <col key={c} style={{ width: `${100 / SCOPE_COLUMNS.length}%` }} />)}
-              </colgroup>
               <thead>
-                <tr style={{ height: HEAD1_H }}>
+                <tr style={{ height: HEAD_H }}>
                   <th
-                    colSpan={SCOPE_COL_COUNT}
                     style={{
-                      ...headCell, height: HEAD1_H, padding: "3px 8px",
+                      ...headCell, height: HEAD_H, padding: "3px 8px",
                       fontWeight: selectedName ? 700 : 400,
                       color: selectedName ? "#1677ff" : "#bfbfbf",
                       whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
@@ -372,23 +368,6 @@ const StudyScope = () => {
                   >
                     {selectedName ? `${selectedName}기술사` : "종목을 선택하세요"}
                   </th>
-                </tr>
-                <tr style={{ height: HEAD2_H }}>
-                  {SCOPE_COLUMNS.map((c, i) => {
-                    const label = detailMode ? (majors[i]?.name || "") : c;
-                    return (
-                      <th
-                        key={c}
-                        style={{
-                          ...headCell, height: HEAD2_H, padding: "3px 6px", fontWeight: 700,
-                          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                        }}
-                        title={label}
-                      >
-                        {label}
-                      </th>
-                    );
-                  })}
                 </tr>
               </thead>
             </table>
@@ -404,122 +383,123 @@ const StudyScope = () => {
           >
             <table style={{ borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", width: LEFT_W }}>
               <tbody>
-                {detailMode ? (
-                  // 상세 모드: 선택 종목 1줄(세부항목 행 수만큼 병합)
-                  Array.from({ length: numDetailRows }).map((_, r) => (
-                    <tr key={`d-${r}`} style={{ height: ROW_H }}>
-                      {r === 0 && (
-                        <>
-                          <td
-                            rowSpan={numDetailRows}
-                            style={{
-                              ...cellBase, width: FIELD_W, minWidth: FIELD_W,
-                              background: "#fafafa", padding: "2px 4px", fontSize: 11, fontWeight: 600,
-                              color: "#374151", textAlign: "center", verticalAlign: "middle",
-                              lineHeight: 1.2, overflow: "hidden",
-                            }}
-                          >
-                            {fieldOf(selectedName)}
-                          </td>
-                          <td
-                            rowSpan={numDetailRows}
-                            style={{
-                              ...cellBase, width: ITEM_W, minWidth: ITEM_W,
-                              background: "#fff", padding: "0 8px", fontWeight: 700,
-                              textAlign: "center", verticalAlign: "middle",
-                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                            }}
-                            title={`${selectedName}기술사`}
-                          >
-                            {selectedName}
-                          </td>
-                        </>
-                      )}
-                    </tr>
-                  ))
-                ) : (
-                  <>
-                    {rows.map((r) => (
-                      <tr key={r.key} style={{ height: ROW_H }}>
-                        {r.showField && (
-                          <td
-                            rowSpan={r.fieldRowSpan}
-                            style={{
-                              ...cellBase, width: FIELD_W, minWidth: FIELD_W,
-                              background: r.isPinned ? "#fff7e6" : "#fafafa",
-                              padding: "2px 4px", fontSize: 11, fontWeight: 600,
-                              color: r.isPinned ? "#ad6800" : "#374151",
-                              textAlign: "center", verticalAlign: "middle",
-                              lineHeight: 1.2, overflow: "hidden",
-                            }}
-                          >
-                            {r.field}
-                          </td>
-                        )}
+                {rows.map((r) => {
+                  const isSel = r.item === selectedName;
+                  return (
+                    <tr key={r.key} style={{ height: ROW_H }}>
+                      {r.showField && (
                         <td
+                          rowSpan={r.fieldRowSpan}
                           style={{
-                            ...cellBase, width: ITEM_W, minWidth: ITEM_W, height: ROW_H,
-                            background: r.isPinned ? "#fffbe6" : "#fff",
-                            padding: "0 8px",
-                            fontWeight: r.isPinned ? 700 : 400,
-                            color: r.isPinned ? "#ad6800" : undefined,
-                            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                            ...cellBase, width: FIELD_W, minWidth: FIELD_W,
+                            background: r.isPinned ? "#fff7e6" : "#fafafa",
+                            padding: "2px 4px", fontSize: 11, fontWeight: 600,
+                            color: r.isPinned ? "#ad6800" : "#374151",
+                            textAlign: "center", verticalAlign: "middle",
+                            lineHeight: 1.2, overflow: "hidden",
                           }}
-                          title={`${r.item}기술사`}
                         >
-                          {r.isPinned ? `★ ${r.item}` : r.item}
+                          {r.field}
                         </td>
-                      </tr>
-                    ))}
-                    {hbar > 0 && (
-                      <tr style={{ height: hbar }}>
-                        <td colSpan={2} style={{ borderRight: BORDER, background: "#fff", padding: 0 }} />
-                      </tr>
-                    )}
-                  </>
+                      )}
+                      <td
+                        style={{
+                          ...cellBase, width: ITEM_W, minWidth: ITEM_W, height: ROW_H,
+                          background: isSel ? "#e6f4ff" : (r.isPinned ? "#fffbe6" : "#fff"),
+                          padding: "0 8px",
+                          fontWeight: (isSel || r.isPinned) ? 700 : 400,
+                          color: isSel ? "#1677ff" : (r.isPinned ? "#ad6800" : undefined),
+                          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                        }}
+                      >
+                        <Tooltip title={isRegistered(r.item) ? `${r.item}기술사` : "출제기준을 등록해주세요"}>
+                          <span
+                            onClick={() => setFItem(r.isPinned ? `pin:${r.item}` : r.item)}
+                            style={{ cursor: "pointer" }}
+                          >
+                            {r.isPinned ? `★ ${r.item}` : r.item}
+                          </span>
+                        </Tooltip>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {hbar > 0 && (
+                  <tr style={{ height: hbar }}>
+                    <td colSpan={2} style={{ borderRight: BORDER, background: "#fff", padding: 0 }} />
+                  </tr>
                 )}
               </tbody>
             </table>
           </div>
 
-          {/* 우하단: 출제기준 7열 본문 (세로 동기화) */}
+          {/* 우하단: 출제기준 본문 — 상세 모드는 주요항목 개수별 열·행 그리드 */}
           <div
             ref={rightBodyRef}
-            style={{ flex: "1 1 auto", overflowX: "hidden", overflowY: "hidden", minHeight: 0 }}
+            style={{ flex: "1 1 auto", overflowX: "hidden", overflowY: detailMode ? "auto" : "hidden", minHeight: 0 }}
           >
-            <table style={{ borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", width: "100%" }}>
-              <colgroup>
-                {SCOPE_COLUMNS.map((c) => <col key={c} style={{ width: `${100 / SCOPE_COLUMNS.length}%` }} />)}
-              </colgroup>
-              <tbody>
-                {detailMode ? (
-                  // 상세 모드: 각 주요항목(열)의 세부항목을 행으로 표시
-                  Array.from({ length: numDetailRows }).map((_, r) => (
-                    <tr key={`dr-${r}`} style={{ height: ROW_H }}>
-                      {majors.map((m, i) => {
-                        const d = (m.details || [])[r] || "";
-                        return (
-                          <td
-                            key={i}
-                            style={{
-                              ...cellBase, height: ROW_H, padding: "0 8px", background: "#fff",
-                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                              lineHeight: `${ROW_LINE}px`,
-                            }}
-                            title={d}
-                          >
+            {detailMode ? (
+              // 상세 모드: 주요항목을 칸 단위로 배치. 각 칸 = 항목명(헤더) + 세부항목.
+              // 열·행 수는 주요항목 개수에 따라 결정(gridCols/gridRows).
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `repeat(${gridCols}, 1fr)`,
+                  borderTop: BORDER, borderLeft: BORDER,
+                }}
+              >
+                {majors.map((m, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      borderRight: BORDER, borderBottom: BORDER, boxSizing: "border-box",
+                      background: "#fff", display: "flex", flexDirection: "column", minWidth: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        background: HEAD_BG, fontWeight: 700, padding: "4px 8px",
+                        borderBottom: BORDER, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                      }}
+                      title={m.name}
+                    >
+                      {m.name}
+                    </div>
+                    <div style={{ padding: "6px 8px" }}>
+                      {(m.details || []).map((d, j) => (
+                        <div
+                          key={j}
+                          style={{
+                            display: "flex", gap: 6, alignItems: "baseline",
+                            padding: "3px 0", lineHeight: 1.4, fontSize: "0.68rem",
+                          }}
+                        >
+                          <span style={{ color: "#8c8c8c", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+                            {j + 1}.
+                          </span>
+                          <span style={{ flex: 1, whiteSpace: "normal", wordBreak: "break-word" }}>
                             {d}
-                          </td>
-                        );
-                      })}
-                      {/* 주요항목이 7개 미만이면 남은 열 채움 */}
-                      {Array.from({ length: Math.max(0, SCOPE_COL_COUNT - majors.length) }).map((_, k) => (
-                        <td key={`pad-${k}`} style={{ ...cellBase, height: ROW_H, background: "#fff" }} />
+                          </span>
+                        </div>
                       ))}
-                    </tr>
-                  ))
-                ) : (
-                  rows.map((r) => {
+                    </div>
+                  </div>
+                ))}
+                {/* 마지막 행의 빈 칸 채움 (그리드 경계선 유지) */}
+                {Array.from({ length: gridPad }).map((_, k) => (
+                  <div
+                    key={`pad-${k}`}
+                    style={{ borderRight: BORDER, borderBottom: BORDER, boxSizing: "border-box", background: "#fff" }}
+                  />
+                ))}
+              </div>
+            ) : (
+              <table style={{ borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", width: "100%" }}>
+                <colgroup>
+                  {SCOPE_COLUMNS.map((c) => <col key={c} style={{ width: `${100 / SCOPE_COLUMNS.length}%` }} />)}
+                </colgroup>
+                <tbody>
+                  {rows.map((r) => {
                     if (isRegistered(r.item)) {
                       // 등록됨(목록 모드) — 종목 선택 시 상세가 보인다는 안내
                       return (
@@ -561,10 +541,10 @@ const StudyScope = () => {
                         </td>
                       </tr>
                     );
-                  })
-                )}
-              </tbody>
-            </table>
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>

@@ -44,79 +44,6 @@
   width: 100%;
 }
 
-
-.wiki-inline-search { display: none; }
-
-@media (min-width: 720px) {
-  .wiki-inline-search {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin-left: 8px;
-    vertical-align: middle;
-  }
-  .wiki-inline-search input {
-    width: 150%;               
-    height: 32px;                  /* 네비 라인 높이에 맞추기 (필요시 36/40 등 조정) */
-    border: 1px solid #d9d9d9;
-    font-size: 0.9rem;
-    padding: 0 8px;
-    outline: none;
-  }
-  .wiki-inline-search button {
-    height: 32px;                  /* 라인 높이 동일 */
-    border: 1px solid #d9d9d9;
-    font-size: 0.9rem;
-    background: #f5f5f5;
-    cursor: pointer;
-    padding: 0 10px;               /* 텍스트 들어갈 정도만 */
-    white-space: nowrap;
-  }
-}
-
-/* 넓은 화면에서는 위키 상단 전폭 검색바를 숨김 */
-@media (min-width: 720px) {
-  .wiki-top-search { display: none !important; }
-}
-
-/* 600px 이하에서는 전폭 검색바 보여주기 */
-@media (max-width: 719.98px) {
-  .wiki-top-search { display: block; }
-}
-
-@media (min-width: 720px) {
-  .contents-wiki {
-    max-width: 1248px;
-    margin: 0 auto;
-    margin-top: 2.9rem;
-    width: 100%;
-  }
-}
-
-@media (max-width: 719.98px) {
-  .contents-wiki {
-    max-width: 1248px;
-    margin: 0 auto;
-    margin-top: 1.9rem;
-    width: 100%;
-  }
-}
-
-
-.wiki-preview table { width: 100%; border-collapse: collapse; }
-.wiki-preview table td, .wiki-preview table th { padding: 6px 8px; }
-.wiki-preview .nm-sec summary { cursor: pointer; list-style: none; }
-.wiki-preview .nm-sec summary::-webkit-details-marker { display: none; }
-
-.contents-wiki .ant-typography a.wiki-title-link {
-  color: inherit;
-  text-decoration: black;
-}
-
-.contents-wiki .ant-typography a.wiki-title-link:hover {
-  text-decoration: underline;
-}
-
 .whiteBox{
   background-color: white;
   padding: 20px; 
@@ -150,8 +77,18 @@
   background: rgb(66, 8, 160) !important;
 }
 
-.nm-sec summary { cursor: pointer; list-style: none; }
-.nm-sec summary::-webkit-details-marker { display: none; }
-.nm-sec .nm-sec-title { display: inline; margin: 0; }
-.nm-sec .secno { font-weight: 600; margin-right: .25rem; }
-.nm-sec-body { margin: .25rem 0 .75rem 0; }
+/* ===========================================================
+   전역 리셋 (범용)
+   =========================================================== */
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+}
+
+html {
+  height: 100%;
+}
+
+body{
+  overflow-x: hidden;
+  margin: 0;
+}

@@ -3,11 +3,13 @@ import Box from '@mui/material/Box';
 import Tab from '@mui/material/Tab';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import AxiosInstance from './AxiosInstance';
+import { useAuth } from './AuthContext';
 
 export default function Navbar(props) {
   const { content } = props;
   const navigate = useNavigate();
   const location = useLocation();
+  const { isAuthenticated, setIsAuthenticated } = useAuth();
 
   const [wikiQ, setWikiQ] = React.useState('');            // ✅ 위키 인라인 검색 상태
   const isWikiRoute = location.pathname.startsWith('/wiki'); // ✅ /wiki 계열일 때만 표시
@@ -15,11 +17,12 @@ export default function Navbar(props) {
   const logoutUser = () => {
     AxiosInstance.post(`logoutall/`, {}).then(() => {
       localStorage.removeItem('Token');
+      setIsAuthenticated(false);
       navigate('/');
     });
   };
 
-  const isLoggedIn = localStorage.getItem('Token') !== null; // 로그인 여부 확인
+  const isLoggedIn = isAuthenticated; // 검증된 로그인 상태 (AuthContext)
 
   // 특정 경로가 활성 상태인지 확인
   const isActive = (path) => location.pathname.startsWith(path);

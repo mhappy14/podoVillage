@@ -40,6 +40,7 @@ import PasswordReset from './components/PasswordReset.jsx';
 function App() {
   const location = useLocation();
   const isWiki = location.pathname.startsWith('/wiki');
+  const isStudy = location.pathname.startsWith('/study');
 
   function DefaultLayout() {
     return <div className="contents"><Outlet /></div>;
@@ -55,7 +56,7 @@ function App() {
         {location.pathname === '/about' && (
           <link rel="stylesheet" type="text/css" href="/App2.css" />
         )}
-        {isWiki && (
+        {(isWiki || isStudy) && (
           <link rel="stylesheet" type="text/css" href="/App3.css" />
         )}
       </HelmetProvider>
