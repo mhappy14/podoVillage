@@ -24,6 +24,7 @@ const WikiForm = ({ initialValues, onFinish, loading, onValuesChange, hideTitle 
 
       <Form.Item
         name="content"
+        style={{ marginBottom: "0.5rem" }}
         rules={[{ required: true, message: '내용을 입력하세요' }]}
       >
         <Input.TextArea rows={16} />

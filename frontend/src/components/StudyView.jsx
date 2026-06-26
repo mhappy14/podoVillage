@@ -43,6 +43,7 @@ import ExplanationCarousel from "./ExplanationCarousel";
 import { InputNumber, Select, Tabs } from "antd";
 import StudyWriteFromPdf from "./StudyWriteFromPdf";
 import StudyWriteExplanation from "./StudyWriteExplanation";
+import WikiEditTabs from "./WikiEditTabs";
 
 const { Title, Text } = Typography;
 
@@ -533,6 +534,8 @@ function QuestionBlock({
   const [editScript, setEditScript] = useState(initialQ.qscript || "");
   const [saving, setSaving] = useState(false);
   const [showWriteForm, setShowWriteForm] = useState(false);
+  const [writeContent, setWriteContent] = useState(""); // 인라인 해설 작성 텍스트
+  const [writeSaving, setWriteSaving] = useState(false);
   const [panelOpen, setPanelOpen] = useState(["1"]); // 문제별 collapse 상태 (기본 펼침)
 
   // ex prop 갱신 동기화
@@ -589,6 +592,34 @@ function QuestionBlock({
   const handleEditClick = (e) => {
     e.stopPropagation();
     openEdit();
+  };
+
+  // 인라인 해설 저장 — exam/examnumber/question 은 현재 문제 기준으로 고정
+  const handleInlineSave = async ({ content }) => {
+    const text = (content || "").trim();
+    if (!text) {
+      message.error("해설 내용을 입력해 주세요.");
+      return;
+    }
+    setWriteSaving(true);
+    try {
+      const response = await AxiosInstance.post("explanation/", {
+        exam: examIdParam,
+        examnumber: enIdParam,
+        question: question.id,
+        mainsubject: [],
+        detailsubject: [],
+        explanation: text,
+      });
+      onExplanationAdded?.(response.data);
+      message.success("해설이 저장되었습니다.");
+      setWriteContent("");
+      setShowWriteForm(false);
+    } catch (err) {
+      message.error("저장 실패: " + (err?.response?.data?.detail || err?.message || ""));
+    } finally {
+      setWriteSaving(false);
+    }
   };
 
   // 해설 작성 토글 — 펼쳐진 상태에서만 폼이 보이므로, 열 때 패널도 자동으로 펼친다
@@ -654,22 +685,23 @@ function QuestionBlock({
                   </div>
                 )}
                 {showWriteForm ? (
-                  <StudyWriteExplanation
-                    inlineMode
-                    examList={examObj ? [examObj] : []}
-                    examNumberList={allExamnumbers}
-                    questionList={questions}
-                    mainsubjectList={mainsubjects}
-                    detailsubjectList={detailsubjects}
-                    initialExamId={examIdParam}
-                    initialExamnumberId={enIdParam}
-                    initialQuestionId={question.id}
-                    onSave={(newExp) => {
-                      onExplanationAdded?.(newExp);
-                      setShowWriteForm(false);
-                    }}
-                    onCancel={() => setShowWriteForm(false)}
-                  />
+                  <div>
+                    <WikiEditTabs
+                      thirds
+                      content={writeContent}
+                      onContentChange={setWriteContent}
+                      submitting={writeSaving}
+                      onFinish={handleInlineSave}
+                    />
+                    <Button
+                      size="small"
+                      onClick={() => setShowWriteForm(false)}
+                      disabled={writeSaving}
+                      style={{ marginTop: 8 }}
+                    >
+                      취소
+                    </Button>
+                  </div>
                 ) : (
                   <ExplanationCarousel explanations={myExps} user={user} />
                 )}

@@ -26,7 +26,16 @@ import DOMPurify from "dompurify";
 import parseWikiSyntax from "./WikiParser";
 import AxiosInstance from "./AxiosInstance";
 import Comments from "./Comments";
-import WikiEditTabs from "./WikiEditTabs";
+// WikiEditTabs.jsx 의 모든 컴포넌트를 불러와 카드 안에서 자유롭게 배치한다.
+import WikiEditTabs, {
+  WIKI_TABS,
+  WikiEditInput,
+  WikiPreview,
+  WikiGuidePanel,
+  WikiTabBar,
+  WikiSaveButton,
+  WikiEditBody,
+} from "./WikiEditTabs";
 
 const { Text } = Typography;
 
@@ -298,6 +307,7 @@ function ExplanationCard({ ex, rank, user }) {
   const [editContent, setEditContent] = useState(ex.explanation || "");
   const [savingEdit, setSavingEdit] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [editTab, setEditTab] = useState("edit"); // 편집/미리보기/문법 도움말
 
   // ex prop 이 바뀌면 동기화
   useEffect(() => {
@@ -306,6 +316,7 @@ function ExplanationCard({ ex, rank, user }) {
     setShowComments(false);
     setEditContent(ex.explanation || "");
     setEditing(false);
+    setEditTab("edit");
   }, [ex.id]);
 
   const isAuthor = user && data?.nickname?.id && user.id === data.nickname.id;
@@ -414,6 +425,27 @@ function ExplanationCard({ ex, rank, user }) {
             #{rank} 해설 · {data?.nickname?.nickname || "익명"}
           </Text>
         </div>
+        {isAuthor && editing && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <WikiTabBar activeKey={editTab} onChange={setEditTab} thirds />
+            <Button
+              size="small"
+              onClick={() => {
+                setEditing(false);
+                setEditContent(data.explanation || "");
+                setEditTab("edit");
+              }}
+            >
+              취소
+            </Button>
+            <WikiSaveButton
+              size="small"
+              content={editContent}
+              loading={savingEdit}
+              onSave={(c) => handleInlineSave({ content: c })}
+            />
+          </div>
+        )}
         {isAuthor && (
           <Button
             size="small"
@@ -426,13 +458,25 @@ function ExplanationCard({ ex, rank, user }) {
 
       {isAuthor && editing ? (
         <div style={{ marginTop: "0.25rem", fontSize: "0.75rem" }}>
-          <WikiEditTabs
-            content={editContent}
-            onContentChange={setEditContent}
-            onFinish={handleInlineSave}
-            submitting={savingEdit}
-            thirds
-          />
+          {/* 입력창 / 미리보기 / 도움말 본문 */}
+          <div style={{ marginTop: 6 }}>
+            <WikiEditBody
+              activeKey={editTab}
+              content={editContent}
+              onContentChange={setEditContent}
+              rows={10}
+              inputStyle={{ fontSize: "0.75rem" }}
+              previewStyle={{
+                border: "1px solid #f0f0f0",
+                borderRadius: 6,
+                background: "#fafafa",
+                padding: "0.5rem 1rem",
+                minHeight: 120,
+                fontSize: "0.75rem",
+                lineHeight: 1.6,
+              }}
+            />
+          </div>
         </div>
       ) : (
         <div
